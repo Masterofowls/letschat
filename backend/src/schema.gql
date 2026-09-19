@@ -1,0 +1,157 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+input ApproveQrLoginInput {
+  sessionId: String!
+}
+
+type AuthPayload {
+  accessToken: String
+  pendingToken: String
+  requires2FA: Boolean!
+  user: UserType
+}
+
+type AvailabilityResult {
+  available: Boolean!
+  message: String
+}
+
+input ConfirmTotpInput {
+  code: String!
+}
+
+input CreateRoomInput {
+  description: String
+  name: String!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+type MessageType {
+  content: String!
+  createdAt: DateTime!
+  id: Int!
+  roomId: Int!
+  sender: UserType
+  senderId: Int!
+  updatedAt: DateTime!
+}
+
+type Mutation {
+  approveQrLogin(input: ApproveQrLoginInput!): QrLoginSessionPayload!
+  beginPasskeyLogin: WebAuthnOptionsPayload!
+  beginPasskeyRegistration: WebAuthnOptionsPayload!
+  beginTotpSetup: TotpSetupPayload!
+  confirmTotp(input: ConfirmTotpInput!): UserType!
+  createQrLoginSession: QrLoginSessionPayload!
+  createRoom(input: CreateRoomInput!): RoomType!
+  disableTotp(input: ConfirmTotpInput!): UserType!
+  finishPasskeyLogin(input: PasskeyResponseInput!): AuthPayload!
+  finishPasskeyRegistration(input: PasskeyResponseInput!): Boolean!
+  joinRoom(roomId: Int!): RoomType!
+  login(input: LoginInput!): AuthPayload!
+  markAllNotificationsRead: Int!
+  markNotificationRead(id: Int!): NotificationType!
+  register(input: RegisterInput!): AuthPayload!
+  sendMessage(input: SendMessageInput!): MessageType!
+  verify2FA(input: Verify2FAInput!): AuthPayload!
+}
+
+type NotificationType {
+  body: String
+  createdAt: DateTime!
+  id: Int!
+  isRead: Boolean!
+  messageId: Int
+  roomId: Int
+  title: String!
+  type: String!
+  userId: Int!
+}
+
+input PasskeyResponseInput {
+  responseJson: String!
+}
+
+type QrLoginSessionPayload {
+  accessToken: String
+  expiresAt: DateTime!
+  sessionId: String!
+  status: String!
+  user: UserType
+}
+
+type Query {
+  checkEmail(email: String!): AvailabilityResult!
+  checkUsername(username: String!): AvailabilityResult!
+  me: UserType!
+  messages(roomId: Int!): [MessageType!]!
+  myRooms: [RoomType!]!
+  notifications: [NotificationType!]!
+  qrLoginSession(sessionId: String!): QrLoginSessionPayload!
+  room(id: Int!): RoomType!
+  rooms: [RoomType!]!
+  unreadNotificationCount: Int!
+  user(id: Int!): UserType!
+  users: [UserType!]!
+}
+
+input RegisterInput {
+  email: String!
+  password: String!
+  username: String!
+}
+
+type RoomType {
+  createdAt: DateTime!
+  createdBy: UserType
+  createdById: Int!
+  description: String
+  id: Int!
+  members: [UserType!]
+  name: String!
+  updatedAt: DateTime!
+}
+
+input SendMessageInput {
+  content: String!
+  roomId: Int!
+}
+
+type Subscription {
+  messageAdded(roomId: Int!): MessageType!
+  notificationAdded: NotificationType!
+}
+
+type TotpSetupPayload {
+  otpauthUrl: String!
+  secret: String!
+}
+
+type UserType {
+  createdAt: DateTime!
+  email: String!
+  id: Int!
+  totpEnabled: Boolean!
+  updatedAt: DateTime!
+  username: String!
+}
+
+input Verify2FAInput {
+  code: String!
+  pendingToken: String!
+}
+
+type WebAuthnOptionsPayload {
+  optionsJson: String!
+}

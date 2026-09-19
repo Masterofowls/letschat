@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Discord-inspired dark surface stack */
+    --background: 220 8% 12%;
+    --foreground: 210 9% 87%;
+    --card: 220 7% 18%;
+    --card-foreground: 210 9% 87%;
+    --popover: 220 7% 16%;
+    --popover-foreground: 210 9% 87%;
+    --primary: 235 86% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 6% 25%;
+    --secondary-foreground: 210 9% 87%;
+    --muted: 220 6% 22%;
+    --muted-foreground: 214 8% 61%;
+    --accent: 220 6% 25%;
+    --accent-foreground: 210 9% 92%;
+    --destructive: 359 83% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 6% 22%;
+    --input: 225 7% 14%;
+    --ring: 235 86% 65%;
+    --radius: 0.5rem;
+
+    --discord-deepest: 220 8% 10%;
+    --discord-sidebar: 220 7% 18%;
+    --discord-main: 220 6% 21%;
+    --discord-modifier: 220 6% 25%;
+    --discord-online: 139 47% 44%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply h-full overflow-hidden;
+  }
+
+  body {
+    @apply bg-[hsl(var(--discord-deepest))] font-sans text-foreground antialiased;
+  }
+}
+
+@layer components {
+  .discord-shell {
+    @apply flex h-screen w-full overflow-hidden bg-[hsl(var(--discord-deepest))];
+  }
+
+  .server-pill {
+    @apply absolute left-0 top-1/2 h-0 w-1 -translate-y-1/2 rounded-r-full bg-transparent transition-all duration-200;
+  }
+
+  .server-pill-active {
+    @apply h-10 bg-white;
+  }
+
+  .server-pill-hover {
+    @apply h-5 bg-white;
+  }
+
+  .channel-item {
+    @apply flex items-center gap-1.5 rounded-[4px] px-2 py-1.5 text-[15px] text-muted-foreground transition-colors hover:bg-[hsl(var(--discord-modifier))] hover:text-foreground;
+  }
+
+  .channel-item-active {
+    @apply bg-[hsl(var(--discord-modifier))] text-foreground;
+  }
+
+  .message-row {
+    @apply relative flex gap-4 px-4 py-0.5 hover:bg-black/10;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--discord-modifier)) transparent;
+  }
+}
