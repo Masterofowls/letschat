@@ -30,9 +30,12 @@ cp .env.example .env   # if needed
 npm install
 npm run db:push        # apply schema (or npm run db:migrate)
 npm run start:dev      # http://localhost:9000/graphql
+                       # AdminJS: http://localhost:9000/admin (ADMIN_EMAIL / ADMIN_PASSWORD)
 npm test               # Jest unit tests
 npm run test:e2e       # health e2e
 ```
+
+Admin panel ([AdminJS](https://adminjs.co/)) manages users, rooms, messages, notifications, passkeys, and QR login sessions. Defaults: `admin` / `2015` (override via `ADMIN_EMAIL` / `ADMIN_PASSWORD`).
 
 ### 3. Frontend
 

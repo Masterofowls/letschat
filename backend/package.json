@@ -20,6 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@adminjs/express": "^6.1.1",
+    "@adminjs/sql": "^2.2.6",
     "@apollo/server": "^4.11.3",
     "@nestjs/apollo": "^12.2.2",
     "@nestjs/common": "^10.4.15",
@@ -30,10 +32,13 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.15",
     "@simplewebauthn/server": "^14.0.2",
+    "adminjs": "^7.8.17",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "drizzle-orm": "^0.38.3",
+    "express-formidable": "^1.2.0",
+    "express-session": "^1.19.0",
     "graphql": "^16.10.0",
     "graphql-pg-subscriptions": "^3.0.0",
     "graphql-subscriptions": "^3.0.0",
@@ -43,13 +48,15 @@
     "passport-jwt": "^4.0.1",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
     "@nestjs/schematics": "^10.2.3",
     "@nestjs/testing": "^10.4.15",
     "@types/bcryptjs": "^2.4.6",
+    "@types/express-session": "^1.19.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.10.5",
     "@types/passport-jwt": "^4.0.1",

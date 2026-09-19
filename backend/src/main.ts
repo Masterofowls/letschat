@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { setupAdmin } from './admin/setup-admin';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -19,10 +20,13 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  await setupAdmin(app);
+
   // Render requires binding to 0.0.0.0 and process.env.PORT
   const port = Number(process.env.PORT) || 9000;
   await app.listen(port, '0.0.0.0');
   logger.log(`GraphQL API listening on http://0.0.0.0:${port}/graphql`);
+  logger.log(`AdminJS panel listening on http://0.0.0.0:${port}/admin`);
 }
 
 bootstrap().catch((error: unknown) => {
