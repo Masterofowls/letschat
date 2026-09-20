@@ -1,5 +1,5 @@
 import { ObjectType, Field, Int } from '@nestjs/graphql';
-import { UserType } from '../users/user.type';
+import { UserType, PublicUserType } from '../users/user.type';
 
 @ObjectType()
 export class RoomType {
@@ -11,6 +11,21 @@ export class RoomType {
 
   @Field(() => String, { nullable: true })
   description?: string | null;
+
+  @Field()
+  inviteCode!: string;
+
+  @Field()
+  publicRoomPath!: string;
+
+  @Field()
+  isDm!: boolean;
+
+  @Field(() => String, { nullable: true })
+  dmKey?: string | null;
+
+  @Field(() => PublicUserType, { nullable: true })
+  dmPeer?: PublicUserType | null;
 
   @Field(() => Int)
   createdById!: number;

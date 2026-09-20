@@ -1,13 +1,20 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { MessagesRepository } from './messages.repository';
 import { SendMessageInput } from './messages.dto';
 import { RoomsService } from '../rooms/rooms.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PUB_SUB } from '../pubsub/pubsub.module';
-import { Message } from '../database/schema';
+import { Message, User } from '../database/schema';
+import { TypingEventType } from './typing.type';
 
 export const MESSAGE_ADDED = 'messageAdded';
+export const TYPING_UPDATED = 'typingUpdated';
 
 @Injectable()
 export class MessagesService {
@@ -26,11 +33,21 @@ export class MessagesService {
   async send(input: SendMessageInput, senderId: number): Promise<Message> {
     await this.roomsService.assertMembership(input.roomId, senderId);
 
+    let replyToId: number | null = null;
+    if (input.replyToId) {
+      const parent = await this.messagesRepository.findById(input.replyToId);
+      if (!parent || parent.roomId !== input.roomId) {
+        throw new BadRequestException('Reply target must be a message in this room');
+      }
+      replyToId = parent.id;
+    }
+
     // Persistence first — history must survive crashes before publish
     const message = await this.messagesRepository.create({
       roomId: input.roomId,
       senderId,
       content: input.content.trim(),
+      replyToId,
     });
 
     await this.pubSub.publish(MESSAGE_ADDED, { messageAdded: message });
@@ -49,5 +66,25 @@ export class MessagesService {
     }
 
     return message;
+  }
+
+  async setTyping(roomId: number, user: User, isTyping: boolean): Promise<boolean> {
+    await this.roomsService.assertMembership(roomId, user.id);
+
+    const event: TypingEventType = {
+      roomId,
+      userId: user.id,
+      username: user.username,
+      isTyping,
+    };
+
+    await this.pubSub.publish(TYPING_UPDATED, { typingUpdated: event });
+    return true;
+  }
+
+  async getReplyTo(message: Message): Promise<Message | null> {
+    if (!message.replyToId) return null;
+    const parent = await this.messagesRepository.findById(message.replyToId);
+    return parent ?? null;
   }
 }

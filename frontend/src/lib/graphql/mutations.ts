@@ -8,7 +8,12 @@ export const AUTH_FIELDS = `
     id
     email
     username
+    displayName
+    bio
+    avatarUrl
+    platform
     totpEnabled
+    publicProfilePath
   }
 `;
 
@@ -119,6 +124,8 @@ export const CREATE_ROOM_MUTATION = gql`
       id
       name
       description
+      inviteCode
+      publicRoomPath
     }
   }
 `;
@@ -128,7 +135,56 @@ export const JOIN_ROOM_MUTATION = gql`
     joinRoom(roomId: $roomId) {
       id
       name
+      inviteCode
+      publicRoomPath
     }
+  }
+`;
+
+export const JOIN_ROOM_BY_INVITE_MUTATION = gql`
+  mutation JoinRoomByInvite($inviteCode: String!) {
+    joinRoomByInvite(inviteCode: $inviteCode) {
+      id
+      name
+      inviteCode
+      publicRoomPath
+    }
+  }
+`;
+
+export const SEND_FRIEND_REQUEST = gql`
+  mutation SendFriendRequest($input: FriendUserInput!) {
+    sendFriendRequest(input: $input) {
+      id
+      status
+      otherUser {
+        id
+        username
+        displayName
+        avatarUrl
+      }
+    }
+  }
+`;
+
+export const ACCEPT_FRIEND_REQUEST = gql`
+  mutation AcceptFriendRequest($input: FriendUserInput!) {
+    acceptFriendRequest(input: $input) {
+      id
+      status
+      otherUser {
+        id
+        username
+        displayName
+        avatarUrl
+      }
+    }
+  }
+`;
+
+export const REMOVE_FRIEND = gql`
+  mutation RemoveFriend($input: FriendUserInput!) {
+    removeFriend(input: $input)
   }
 `;
 
@@ -139,12 +195,72 @@ export const SEND_MESSAGE_MUTATION = gql`
       roomId
       senderId
       content
+      replyToId
       createdAt
+      replyTo {
+        id
+        content
+        senderId
+        sender {
+          id
+          username
+          displayName
+        }
+      }
       sender {
         id
         username
+        displayName
+        avatarUrl
       }
     }
+  }
+`;
+
+export const OPEN_DIRECT_MESSAGE = gql`
+  mutation OpenDirectMessage($userId: Int!) {
+    openDirectMessage(userId: $userId) {
+      id
+      name
+      isDm
+      dmPeer {
+        id
+        username
+        displayName
+        avatarUrl
+      }
+    }
+  }
+`;
+
+export const UPDATE_PROFILE_MUTATION = gql`
+  mutation UpdateProfile($input: UpdateProfileInput!) {
+    updateProfile(input: $input) {
+      id
+      email
+      username
+      displayName
+      bio
+      avatarUrl
+      platform
+      totpEnabled
+      publicProfilePath
+    }
+  }
+`;
+
+export const REPORT_PLATFORM_MUTATION = gql`
+  mutation ReportPlatform($input: ReportPlatformInput!) {
+    reportPlatform(input: $input) {
+      id
+      platform
+    }
+  }
+`;
+
+export const SET_TYPING_MUTATION = gql`
+  mutation SetTyping($input: SetTypingInput!) {
+    setTyping(input: $input)
   }
 `;
 

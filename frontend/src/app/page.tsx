@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { useApolloClient, useQuery } from '@apollo/client';
-import { Hash, Users } from 'lucide-react';
-import { LogoutIcon, MessageCircleMoreIcon, SparklesIcon } from 'lucide-animated';
+import { Hash } from 'lucide-react';
+import { LogoutIcon, MessageCircleMoreIcon } from 'lucide-animated';
 import { AuthForm } from '@/components/AuthForm';
 import { AppShell } from '@/components/AppShell';
 import { NotificationBell } from '@/components/NotificationBell';
 import { TypingText } from '@/components/TypingText';
+import { GlobalSearch } from '@/components/GlobalSearch';
+import { FriendsPanel } from '@/components/FriendsPanel';
 import { ME_QUERY } from '@/lib/graphql/queries';
 import { getToken, setToken } from '@/lib/apollo-client';
 import { Button } from '@/components/ui/button';
@@ -123,16 +125,17 @@ export default function HomePage() {
   return (
     <AppShell
       header={
-        <header className="flex h-12 items-center justify-between border-b border-black/20 px-4 shadow-sm">
-          <div className="flex items-center gap-2">
+        <header className="flex h-12 items-center justify-between gap-3 border-b border-black/20 px-4 shadow-sm">
+          <div className="flex shrink-0 items-center gap-2">
             <Hash className="h-5 w-5 text-muted-foreground" />
             <h1 className="font-semibold">Friends</h1>
-            <span className="mx-2 h-6 w-px bg-white/10" />
-            <span className="text-sm text-muted-foreground">
+            <span className="mx-2 hidden h-6 w-px bg-white/10 sm:block" />
+            <span className="hidden text-sm text-muted-foreground sm:inline">
               Signed in as {data?.me?.username}
             </span>
           </div>
-          <div className="flex items-center gap-1">
+          <GlobalSearch />
+          <div className="flex shrink-0 items-center gap-1">
             <NotificationBell />
             <Button
               type="button"
@@ -148,16 +151,7 @@ export default function HomePage() {
         </header>
       }
     >
-      <section className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-discord-modifier">
-          <Users className="h-10 w-10 text-muted-foreground" />
-        </div>
-        <SparklesIcon size={28} className="text-primary" />
-        <h2 className="text-3xl font-bold">Select a channel</h2>
-        <p className="max-w-md text-muted-foreground">
-          Pick a text channel from the sidebar, or create a new one to start chatting.
-        </p>
-      </section>
+      <FriendsPanel />
     </AppShell>
   );
 }

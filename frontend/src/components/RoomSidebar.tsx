@@ -1,13 +1,17 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMutation, useQuery } from '@apollo/client';
 import { ChevronDownIcon, PlusIcon, SearchIcon } from 'lucide-animated';
 import { Hash } from 'lucide-react';
 import { MY_ROOMS_QUERY, ROOMS_QUERY, ME_QUERY } from '@/lib/graphql/queries';
-import { CREATE_ROOM_MUTATION, JOIN_ROOM_MUTATION } from '@/lib/graphql/mutations';
+import {
+  CREATE_ROOM_MUTATION,
+  JOIN_ROOM_MUTATION,
+  REPORT_PLATFORM_MUTATION,
+} from '@/lib/graphql/mutations';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +19,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { UserAvatar } from '@/components/UserAvatar';
 import { SecuritySettings } from '@/components/SecuritySettings';
+import { SettingsMenuButton, UserSettings } from '@/components/UserSettings';
+import { detectPlatform, platformLabel } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 
 type Room = {
@@ -25,16 +31,26 @@ type Room = {
 
 export function RoomSidebar() {
   const pathname = usePathname();
-  const { data: meData } = useQuery(ME_QUERY);
+  const { data: meData, refetch: refetchMe } = useQuery(ME_QUERY);
   const { data: myRoomsData, refetch: refetchMy } = useQuery<{ myRooms: Room[] }>(
     MY_ROOMS_QUERY,
   );
   const { data: roomsData, refetch: refetchAll } = useQuery<{ rooms: Room[] }>(ROOMS_QUERY);
   const [createRoom] = useMutation(CREATE_ROOM_MUTATION);
   const [joinRoom] = useMutation(JOIN_ROOM_MUTATION);
+  const [reportPlatform] = useMutation(REPORT_PLATFORM_MUTATION);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const reportedPlatform = useRef(false);
+
+  useEffect(() => {
+    if (!meData?.me || reportedPlatform.current) return;
+    reportedPlatform.current = true;
+    const platform = detectPlatform();
+    void reportPlatform({ variables: { input: { platform } } }).then(() => refetchMe());
+  }, [meData?.me, reportPlatform, refetchMe]);
 
   async function onCreate(event: FormEvent) {
     event.preventDefault();
@@ -50,6 +66,7 @@ export function RoomSidebar() {
 
   const myRoomIds = new Set((myRoomsData?.myRooms ?? []).map((r) => r.id));
   const browse = (roomsData?.rooms ?? []).filter((room) => !myRoomIds.has(room.id));
+  const display = meData?.me?.displayName || meData?.me?.username || 'Guest';
 
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-discord-sidebar">
@@ -170,15 +187,29 @@ export function RoomSidebar() {
 
       <Separator className="bg-black/30" />
       <div className="flex items-center gap-2 bg-[#232428] px-2 py-1.5">
-        <UserAvatar name={meData?.me?.username ?? 'You'} size="sm" online />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight">
-            {meData?.me?.username ?? 'Guest'}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">Online</p>
-        </div>
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-white/5"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <UserAvatar
+            name={display}
+            avatarUrl={meData?.me?.avatarUrl}
+            size="sm"
+            online
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold leading-tight">{display}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {platformLabel(meData?.me?.platform || detectPlatform())}
+            </p>
+          </div>
+        </button>
+        <SettingsMenuButton onOpen={() => setSettingsOpen(true)} />
         <SecuritySettings />
       </div>
+
+      <UserSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </aside>
   );
 }

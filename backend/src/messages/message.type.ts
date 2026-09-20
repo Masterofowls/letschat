@@ -15,6 +15,12 @@ export class MessageType {
   @Field()
   content!: string;
 
+  @Field(() => Int, { nullable: true })
+  replyToId?: number | null;
+
+  @Field(() => MessageType, { nullable: true })
+  replyTo?: MessageType | null;
+
   @Field(() => UserType, { nullable: true })
   sender?: UserType;
 

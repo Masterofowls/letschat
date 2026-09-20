@@ -32,6 +32,21 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+input FriendUserInput {
+  userId: Int!
+}
+
+type FriendshipType {
+  addressee: PublicUserType
+  addresseeId: Int!
+  createdAt: DateTime!
+  id: Int!
+  otherUser: PublicUserType
+  requester: PublicUserType
+  requesterId: Int!
+  status: String!
+}
+
 input LoginInput {
   email: String!
   password: String!
@@ -41,6 +56,8 @@ type MessageType {
   content: String!
   createdAt: DateTime!
   id: Int!
+  replyTo: MessageType
+  replyToId: Int
   roomId: Int!
   sender: UserType
   senderId: Int!
@@ -48,6 +65,7 @@ type MessageType {
 }
 
 type Mutation {
+  acceptFriendRequest(input: FriendUserInput!): FriendshipType!
   approveQrLogin(input: ApproveQrLoginInput!): QrLoginSessionPayload!
   beginPasskeyLogin: WebAuthnOptionsPayload!
   beginPasskeyRegistration: WebAuthnOptionsPayload!
@@ -59,11 +77,18 @@ type Mutation {
   finishPasskeyLogin(input: PasskeyResponseInput!): AuthPayload!
   finishPasskeyRegistration(input: PasskeyResponseInput!): Boolean!
   joinRoom(roomId: Int!): RoomType!
+  joinRoomByInvite(inviteCode: String!): RoomType!
   login(input: LoginInput!): AuthPayload!
   markAllNotificationsRead: Int!
   markNotificationRead(id: Int!): NotificationType!
+  openDirectMessage(userId: Int!): RoomType!
   register(input: RegisterInput!): AuthPayload!
+  removeFriend(input: FriendUserInput!): Boolean!
+  reportPlatform(input: ReportPlatformInput!): UserType!
+  sendFriendRequest(input: FriendUserInput!): FriendshipType!
   sendMessage(input: SendMessageInput!): MessageType!
+  setTyping(input: SetTypingInput!): Boolean!
+  updateProfile(input: UpdateProfileInput!): UserType!
   verify2FA(input: Verify2FAInput!): AuthPayload!
 }
 
@@ -83,6 +108,17 @@ input PasskeyResponseInput {
   responseJson: String!
 }
 
+type PublicUserType {
+  avatarUrl: String
+  bio: String
+  createdAt: DateTime!
+  displayName: String
+  id: Int!
+  platform: String
+  publicProfilePath: String!
+  username: String!
+}
+
 type QrLoginSessionPayload {
   accessToken: String
   expiresAt: DateTime!
@@ -94,13 +130,20 @@ type QrLoginSessionPayload {
 type Query {
   checkEmail(email: String!): AvailabilityResult!
   checkUsername(username: String!): AvailabilityResult!
+  friendRequests: [FriendshipType!]!
+  friends: [FriendshipType!]!
   me: UserType!
   messages(roomId: Int!): [MessageType!]!
+  myDirectMessages: [RoomType!]!
   myRooms: [RoomType!]!
   notifications: [NotificationType!]!
+  publicProfile(username: String!): PublicUserType!
   qrLoginSession(sessionId: String!): QrLoginSessionPayload!
   room(id: Int!): RoomType!
+  roomByInvite(inviteCode: String!): RoomType!
   rooms: [RoomType!]!
+  searchRooms(query: String!): [RoomType!]!
+  searchUsers(query: String!): [UserSearchResultType!]!
   unreadNotificationCount: Int!
   user(id: Int!): UserType!
   users: [UserType!]!
@@ -112,25 +155,41 @@ input RegisterInput {
   username: String!
 }
 
+input ReportPlatformInput {
+  platform: String!
+}
+
 type RoomType {
   createdAt: DateTime!
   createdBy: UserType
   createdById: Int!
   description: String
+  dmKey: String
+  dmPeer: PublicUserType
   id: Int!
+  inviteCode: String!
+  isDm: Boolean!
   members: [UserType!]
   name: String!
+  publicRoomPath: String!
   updatedAt: DateTime!
 }
 
 input SendMessageInput {
   content: String!
+  replyToId: Int
+  roomId: Int!
+}
+
+input SetTypingInput {
+  isTyping: Boolean!
   roomId: Int!
 }
 
 type Subscription {
   messageAdded(roomId: Int!): MessageType!
   notificationAdded: NotificationType!
+  typingUpdated(roomId: Int!): TypingEventType!
 }
 
 type TotpSetupPayload {
@@ -138,10 +197,39 @@ type TotpSetupPayload {
   secret: String!
 }
 
+type TypingEventType {
+  isTyping: Boolean!
+  roomId: Int!
+  userId: Int!
+  username: String!
+}
+
+input UpdateProfileInput {
+  avatarUrl: String
+  bio: String
+  displayName: String
+}
+
+type UserSearchResultType {
+  avatarUrl: String
+  bio: String
+  displayName: String
+  friendshipStatus: String!
+  id: Int!
+  platform: String
+  publicProfilePath: String!
+  username: String!
+}
+
 type UserType {
+  avatarUrl: String
+  bio: String
   createdAt: DateTime!
+  displayName: String
   email: String!
   id: Int!
+  platform: String
+  publicProfilePath: String!
   totpEnabled: Boolean!
   updatedAt: DateTime!
   username: String!

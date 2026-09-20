@@ -11,6 +11,7 @@ import { UsersModule } from './users/users.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { MessagesModule } from './messages/messages.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { FriendsModule } from './friends/friends.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -87,6 +88,7 @@ import { HealthController } from './health.controller';
     RoomsModule,
     MessagesModule,
     NotificationsModule,
+    FriendsModule,
   ],
 })
 export class AppModule {}

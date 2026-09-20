@@ -1,5 +1,5 @@
 import { InputType, Field, Int } from '@nestjs/graphql';
-import { IsInt, IsString, MinLength, MaxLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, MinLength, MaxLength } from 'class-validator';
 
 @InputType()
 export class SendMessageInput {
@@ -12,4 +12,9 @@ export class SendMessageInput {
   @MinLength(1)
   @MaxLength(4000)
   content!: string;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  replyToId?: number;
 }

@@ -18,6 +18,10 @@ export const users = pgTable(
     email: varchar('email', { length: 255 }).notNull(),
     username: varchar('username', { length: 100 }).notNull(),
     passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+    displayName: varchar('display_name', { length: 100 }),
+    bio: text('bio'),
+    avatarUrl: varchar('avatar_url', { length: 500 }),
+    platform: varchar('platform', { length: 32 }),
     totpSecret: varchar('totp_secret', { length: 255 }),
     totpEnabled: boolean('totp_enabled').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -69,13 +73,41 @@ export const rooms = pgTable(
     id: serial('id').primaryKey(),
     name: varchar('name', { length: 150 }).notNull(),
     description: text('description'),
+    inviteCode: varchar('invite_code', { length: 32 }).notNull(),
+    isDm: boolean('is_dm').default(false).notNull(),
+    dmKey: varchar('dm_key', { length: 64 }),
     createdById: integer('created_by_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('rooms_created_by_idx').on(table.createdById)],
+  (table) => [
+    index('rooms_created_by_idx').on(table.createdById),
+    uniqueIndex('rooms_invite_code_idx').on(table.inviteCode),
+    uniqueIndex('rooms_dm_key_idx').on(table.dmKey),
+  ],
+);
+
+export const friendships = pgTable(
+  'friendships',
+  {
+    id: serial('id').primaryKey(),
+    requesterId: integer('requester_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    addresseeId: integer('addressee_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    status: varchar('status', { length: 20 }).default('pending').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('friendships_pair_idx').on(table.requesterId, table.addresseeId),
+    index('friendships_addressee_idx').on(table.addresseeId),
+    index('friendships_requester_idx').on(table.requesterId),
+  ],
 );
 
 export const roomMembers = pgTable(
@@ -107,6 +139,7 @@ export const messages = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     content: text('content').notNull(),
+    replyToId: integer('reply_to_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -114,6 +147,7 @@ export const messages = pgTable(
     index('messages_room_idx').on(table.roomId),
     index('messages_sender_idx').on(table.senderId),
     index('messages_created_at_idx').on(table.createdAt),
+    index('messages_reply_to_idx').on(table.replyToId),
   ],
 );
 
@@ -182,6 +216,11 @@ export const messagesRelations = relations(messages, ({ one }) => ({
     fields: [messages.senderId],
     references: [users.id],
   }),
+  replyTo: one(messages, {
+    fields: [messages.replyToId],
+    references: [messages.id],
+    relationName: 'message_replies',
+  }),
 }));
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({
@@ -209,3 +248,5 @@ export type Notification = typeof notifications.$inferSelect;
 export type NewNotification = typeof notifications.$inferInsert;
 export type PasskeyCredential = typeof passkeyCredentials.$inferSelect;
 export type QrLoginSession = typeof qrLoginSessions.$inferSelect;
+export type Friendship = typeof friendships.$inferSelect;
+export type NewFriendship = typeof friendships.$inferInsert;

@@ -20,10 +20,14 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { CurrentUser } from './current-user.decorator';
 import { User } from '../database/schema';
 import { UserType } from '../users/user.type';
+import { UsersService } from '../users/users.service';
 
 @Resolver()
 export class AuthResolver {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Query(() => AvailabilityResult)
   checkEmail(@Args('email') email: string): Promise<AvailabilityResult> {
@@ -58,20 +62,22 @@ export class AuthResolver {
 
   @Mutation(() => UserType)
   @UseGuards(JwtAuthGuard)
-  confirmTotp(
+  async confirmTotp(
     @Args('input') input: ConfirmTotpInput,
     @CurrentUser() user: User,
   ): Promise<UserType> {
-    return this.authService.confirmTotp(user.id, input.code);
+    const updated = await this.authService.confirmTotp(user.id, input.code);
+    return this.usersService.toUserType(updated);
   }
 
   @Mutation(() => UserType)
   @UseGuards(JwtAuthGuard)
-  disableTotp(
+  async disableTotp(
     @Args('input') input: ConfirmTotpInput,
     @CurrentUser() user: User,
   ): Promise<UserType> {
-    return this.authService.disableTotp(user.id, input.code);
+    const updated = await this.authService.disableTotp(user.id, input.code);
+    return this.usersService.toUserType(updated);
   }
 
   @Mutation(() => WebAuthnOptionsPayload)

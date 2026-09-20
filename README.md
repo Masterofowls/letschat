@@ -60,6 +60,10 @@ NEXT_PUBLIC_WS_URL=ws://localhost:9000/graphql
 
 - Realtime email/username availability checks (`checkEmail`, `checkUsername`)
 - Password strength meter + generate secure password
+- Settings menu (profile, account, security), platform detection, typing indicators
+- Public profiles at `/u/[username]` + profile photo upload (`POST /uploads/avatar`)
+- Global search for users/rooms, friends, join room, public invite links `/r/[code]`
+- Direct messages with friends, emoji picker, reply-to-message
 - Passkeys (WebAuthn) on sign-in and in Security settings
 - QR code device login (`/qr-auth?session=…`)
 - TOTP 2FA: setup QR in Security settings; required code prompt when enabled

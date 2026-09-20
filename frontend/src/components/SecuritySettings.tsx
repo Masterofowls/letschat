@@ -24,7 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export function SecuritySettings() {
+export function SecuritySettingsPanel() {
   const { data, refetch } = useQuery(ME_QUERY);
   const [beginTotp] = useMutation(BEGIN_TOTP_SETUP);
   const [confirmTotp] = useMutation(CONFIRM_TOTP);
@@ -97,6 +97,92 @@ export function SecuritySettings() {
   }
 
   return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-xl font-semibold text-white">Security</h2>
+        <p className="text-sm text-muted-foreground">
+          Two-factor auth and passkeys for this account.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-foreground">Two-factor auth</p>
+        <p className="text-xs text-muted-foreground">
+          {totpEnabled
+            ? 'Required at sign-in for this account.'
+            : 'Add an authenticator app for extra protection.'}
+        </p>
+      </div>
+
+      {!totpEnabled && !otpauthUrl ? (
+        <Button type="button" variant="blurple" className="w-full" onClick={() => void onEnable2FA()}>
+          Set up 2FA
+        </Button>
+      ) : null}
+
+      {otpauthUrl ? (
+        <form className="space-y-2" onSubmit={onConfirm2FA}>
+          <div className="mx-auto w-fit rounded-md bg-white p-2">
+            <QRCodeSVG value={otpauthUrl} size={140} />
+          </div>
+          {secret ? (
+            <p className="break-all text-center text-[10px] text-muted-foreground">
+              Secret: {secret}
+            </p>
+          ) : null}
+          <Label htmlFor="setup-code" className="text-xs uppercase text-muted-foreground">
+            Confirm code
+          </Label>
+          <Input
+            id="setup-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className="h-9 bg-[#1e1f22]"
+            required
+          />
+          <Button type="submit" variant="blurple" className="w-full">
+            Enable 2FA
+          </Button>
+        </form>
+      ) : null}
+
+      {totpEnabled ? (
+        <form className="space-y-2" onSubmit={onDisable2FA}>
+          <Label htmlFor="disable-code" className="text-xs uppercase text-muted-foreground">
+            Code to disable
+          </Label>
+          <Input
+            id="disable-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            className="h-9 bg-[#1e1f22]"
+            required
+          />
+          <Button type="submit" variant="destructive" className="w-full gap-2">
+            <ShieldOff className="h-4 w-4" />
+            Disable 2FA
+          </Button>
+        </form>
+      ) : null}
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-full gap-2"
+        onClick={() => void onAddPasskey()}
+      >
+        <Fingerprint className="h-4 w-4" />
+        Add passkey
+      </Button>
+
+      {message ? <p className="text-xs text-discord-online">{message}</p> : null}
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+export function SecuritySettings() {
+  return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button type="button" size="icon" variant="ghost" aria-label="Security settings">
@@ -110,82 +196,8 @@ export function SecuritySettings() {
       >
         <DropdownMenuLabel>Account security</DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/10" />
-
-        <div className="space-y-3 p-1">
-          <div>
-            <p className="text-sm font-medium text-foreground">Two-factor auth</p>
-            <p className="text-xs text-muted-foreground">
-              {totpEnabled
-                ? 'Required at sign-in for this account.'
-                : 'Add an authenticator app for extra protection.'}
-            </p>
-          </div>
-
-          {!totpEnabled && !otpauthUrl ? (
-            <Button type="button" variant="blurple" className="w-full" onClick={() => void onEnable2FA()}>
-              Set up 2FA
-            </Button>
-          ) : null}
-
-          {otpauthUrl ? (
-            <form className="space-y-2" onSubmit={onConfirm2FA}>
-              <div className="mx-auto w-fit rounded-md bg-white p-2">
-                <QRCodeSVG value={otpauthUrl} size={140} />
-              </div>
-              {secret ? (
-                <p className="break-all text-center text-[10px] text-muted-foreground">
-                  Secret: {secret}
-                </p>
-              ) : null}
-              <Label htmlFor="setup-code" className="text-xs uppercase text-muted-foreground">
-                Confirm code
-              </Label>
-              <Input
-                id="setup-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="h-9 bg-[#1e1f22]"
-                required
-              />
-              <Button type="submit" variant="blurple" className="w-full">
-                Enable 2FA
-              </Button>
-            </form>
-          ) : null}
-
-          {totpEnabled ? (
-            <form className="space-y-2" onSubmit={onDisable2FA}>
-              <Label htmlFor="disable-code" className="text-xs uppercase text-muted-foreground">
-                Code to disable
-              </Label>
-              <Input
-                id="disable-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="h-9 bg-[#1e1f22]"
-                required
-              />
-              <Button type="submit" variant="destructive" className="w-full gap-2">
-                <ShieldOff className="h-4 w-4" />
-                Disable 2FA
-              </Button>
-            </form>
-          ) : null}
-
-          <DropdownMenuSeparator className="bg-white/10" />
-
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full gap-2"
-            onClick={() => void onAddPasskey()}
-          >
-            <Fingerprint className="h-4 w-4" />
-            Add passkey
-          </Button>
-
-          {message ? <p className="text-xs text-discord-online">{message}</p> : null}
-          {error ? <p className="text-xs text-destructive">{error}</p> : null}
+        <div className="p-1 [&_h2]:hidden">
+          <SecuritySettingsPanel />
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
