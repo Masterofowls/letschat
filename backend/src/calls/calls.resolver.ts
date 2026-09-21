@@ -15,6 +15,7 @@ import {
   StartCallInput,
   UpdateCallMediaInput,
 } from './calls.dto';
+import { shouldReceiveCallSignal, shouldReceiveCallUpdate } from './call-notify';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { User } from '../database/schema';
@@ -107,10 +108,7 @@ export class CallsResolver {
     ) => {
       const userId = context?.req?.user?.id;
       if (!userId) return false;
-      const call = payload.callUpdated;
-      if (call.createdById === userId) return true;
-      if (call.targetUserIds?.includes(userId)) return true;
-      return Boolean(call.participants?.some((p) => p.userId === userId));
+      return shouldReceiveCallUpdate(userId, payload.callUpdated);
     },
   })
   @UseGuards(JwtAuthGuard)
@@ -124,13 +122,9 @@ export class CallsResolver {
       variables: { callId: number },
       context: { req?: { user?: User } },
     ) => {
-      const signal = payload.callSignal;
-      if (signal.callId !== variables.callId) return false;
       const userId = context?.req?.user?.id;
       if (!userId) return false;
-      if (signal.fromUserId === userId) return false;
-      if (signal.toUserId != null && signal.toUserId !== userId) return false;
-      return true;
+      return shouldReceiveCallSignal(userId, payload.callSignal, variables.callId);
     },
   })
   @UseGuards(JwtAuthGuard)

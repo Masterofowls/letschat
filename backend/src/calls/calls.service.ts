@@ -202,17 +202,20 @@ export class CallsService {
   }
 
   private async toCallType(call: Call, targetUserIds?: number[]): Promise<CallType> {
-    const participants = await this.callsRepository.listParticipants(call.id, true);
+    // Include left participants on ended calls so subscription filters still
+    // deliver the hangup event to everyone who was in the call.
+    const activeOnly = call.status !== 'ended';
+    const participants = await this.callsRepository.listParticipants(call.id, activeOnly);
     const participantTypes: CallParticipantType[] = [];
     for (const p of participants) {
       participantTypes.push(await this.toParticipantType(p));
     }
 
-    let targets = targetUserIds;
-    if (!targets && call.status === 'ringing') {
-      const memberIds = await this.roomsService.getMemberIds(call.roomId);
-      targets = memberIds.filter((id) => id !== call.createdById);
-    }
+    // Always notify other room members (ring + hangup + media). Without this,
+    // ended payloads had empty participants and the callee never got hangup.
+    const memberIds = await this.roomsService.getMemberIds(call.roomId);
+    const targets =
+      targetUserIds ?? memberIds.filter((id) => id !== call.createdById);
 
     return {
       id: call.id,

@@ -72,7 +72,17 @@ type CallContextValue = {
   toggleCamera: () => Promise<void>;
 };
 
+type PendingSignal = {
+  signalType: 'offer' | 'answer' | 'ice';
+  payload: string;
+  fromUserId: number;
+  toUserId?: number | null;
+};
+
 const CallContext = createContext<CallContextValue | null>(null);
+
+/** Delay so graphql-ws subscription is live before first offer/answer exchange. */
+export const SIGNAL_SUBSCRIBE_GRACE_MS = 350;
 
 export function useCall(): CallContextValue {
   const ctx = useContext(CallContext);
@@ -103,6 +113,8 @@ export function CallProvider({ children, currentUserId }: Props) {
   const sessionRef = useRef<MeshCallSession | null>(null);
   const activeCallIdRef = useRef<number | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const signalQueueRef = useRef<PendingSignal[]>([]);
+  const connectedPeersRef = useRef<Set<number>>(new Set());
 
   const [startCallMut] = useMutation(START_CALL);
   const [joinCallMut] = useMutation(JOIN_CALL);
@@ -111,9 +123,21 @@ export function CallProvider({ children, currentUserId }: Props) {
   const [sendSignalMut] = useMutation(SEND_CALL_SIGNAL);
   const [updateMediaMut] = useMutation(UPDATE_CALL_MEDIA);
 
+  const flushSignalQueue = useCallback(async () => {
+    const session = sessionRef.current;
+    if (!session) return;
+    const queued = signalQueueRef.current;
+    signalQueueRef.current = [];
+    for (const signal of queued) {
+      await session.handleSignal(signal);
+    }
+  }, []);
+
   const cleanupSession = useCallback((stopLocal = true) => {
     sessionRef.current?.close();
     sessionRef.current = null;
+    signalQueueRef.current = [];
+    connectedPeersRef.current = new Set();
     if (stopLocal) {
       stopMediaStream(localStreamRef.current);
       localStreamRef.current = null;
@@ -127,14 +151,15 @@ export function CallProvider({ children, currentUserId }: Props) {
   const attachSession = useCallback(
     async (call: CallGql, stream: MediaStream, initiateOffers: boolean) => {
       if (!currentUserId) return;
-      // Tear down prior PC mesh but keep the new local stream alive.
       sessionRef.current?.close();
       sessionRef.current = null;
+      connectedPeersRef.current = new Set();
       if (localStreamRef.current && localStreamRef.current !== stream) {
         stopMediaStream(localStreamRef.current);
       }
 
       activeCallIdRef.current = call.id;
+      // Subscribe to signals BEFORE creating offers (grace wait below).
       setSignalCallId(call.id);
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -146,6 +171,7 @@ export function CallProvider({ children, currentUserId }: Props) {
           setRemoteStreams((prev) => ({ ...prev, [userId]: remote }));
         },
         onRemoteStreamRemoved: (userId) => {
+          connectedPeersRef.current.delete(userId);
           setRemoteStreams((prev) => {
             const next = { ...prev };
             delete next[userId];
@@ -167,13 +193,22 @@ export function CallProvider({ children, currentUserId }: Props) {
       });
       sessionRef.current = session;
       await session.setLocalStream(stream);
+      await flushSignalQueue();
 
       const peerIds = (call.participants ?? [])
         .map((p) => p.userId)
         .filter((id) => id !== currentUserId);
+
+      // Let the graphql-ws callSignal subscription attach before first offer.
+      await new Promise((r) => setTimeout(r, SIGNAL_SUBSCRIBE_GRACE_MS));
+      if (sessionRef.current !== session || activeCallIdRef.current !== call.id) {
+        return;
+      }
+
       await session.connectToPeers(peerIds, { initiate: initiateOffers });
+      for (const id of peerIds) connectedPeersRef.current.add(id);
     },
-    [currentUserId, sendSignalMut],
+    [currentUserId, flushSignalQueue, sendSignalMut],
   );
 
   useSubscription(CALL_UPDATED_SUBSCRIPTION, {
@@ -199,8 +234,22 @@ export function CallProvider({ children, currentUserId }: Props) {
         const peers = (call.participants ?? [])
           .map((p) => p.userId)
           .filter((id) => id !== currentUserId);
-        // Existing member: wait for joiner offers (no initiate).
-        void sessionRef.current?.connectToPeers(peers, { initiate: false });
+        const newPeers = peers.filter((id) => !connectedPeersRef.current.has(id));
+        // Existing member already has a live signal subscription — initiate to
+        // new joiners so we do not depend only on the joiner's first offer.
+        if (newPeers.length && sessionRef.current) {
+          for (const id of newPeers) connectedPeersRef.current.add(id);
+          const session = sessionRef.current;
+          const callId = call.id;
+          void (async () => {
+            // Give joiner time to open callSignal subscription + session.
+            await new Promise((r) => setTimeout(r, SIGNAL_SUBSCRIBE_GRACE_MS));
+            if (sessionRef.current !== session || activeCallIdRef.current !== callId) {
+              return;
+            }
+            await session.connectToPeers(newPeers, { initiate: true });
+          })();
+        }
         return;
       }
 
@@ -218,8 +267,12 @@ export function CallProvider({ children, currentUserId }: Props) {
     skip: !signalCallId,
     variables: { callId: signalCallId },
     onData: ({ data }) => {
-      const signal = data.data?.callSignal;
-      if (!signal || !sessionRef.current) return;
+      const signal = data.data?.callSignal as PendingSignal | undefined;
+      if (!signal) return;
+      if (!sessionRef.current) {
+        signalQueueRef.current.push(signal);
+        return;
+      }
       void sessionRef.current.handleSignal({
         signalType: signal.signalType,
         payload: signal.payload,
@@ -243,7 +296,7 @@ export function CallProvider({ children, currentUserId }: Props) {
         });
         const call = normalizeCallPayload(result.data?.startCall as CallGql);
         setActiveCall(call);
-        // Starter has no peers yet — no offers.
+        // Starter waits for joiner; callUpdated will initiate when they join.
         await attachSession(call, stream, false);
       } catch (err) {
         stopMediaStream(stream);
@@ -263,7 +316,7 @@ export function CallProvider({ children, currentUserId }: Props) {
       const call = normalizeCallPayload(result.data?.joinCall as CallGql);
       setIncomingCall(null);
       setActiveCall(call);
-      // Joiner initiates offers to everyone already in the call.
+      // Joiner also offers after grace — glare is handled by polite peer logic.
       await attachSession(call, stream, true);
     } catch (err) {
       stopMediaStream(stream);
@@ -272,9 +325,18 @@ export function CallProvider({ children, currentUserId }: Props) {
   }, [attachSession, incomingCall, joinCallMut]);
 
   const declineCall = useCallback(async () => {
-    if (!incomingCall) return;
+    const call = incomingCall;
     setIncomingCall(null);
-  }, [incomingCall]);
+    if (!call) return;
+    try {
+      // Declining a 1:1 ring ends it for the caller too.
+      if (call.maxParticipants <= 2) {
+        await endCallMut({ variables: { callId: call.id } });
+      }
+    } catch {
+      // ignore
+    }
+  }, [endCallMut, incomingCall]);
 
   const hangUp = useCallback(async () => {
     const call = activeCall;
@@ -284,7 +346,6 @@ export function CallProvider({ children, currentUserId }: Props) {
     setActiveCall(null);
     if (!callId) return;
     try {
-      // 1:1 (or DM-sized) hangup ends the whole call so the other side closes.
       if (maxParticipants <= 2) {
         await endCallMut({ variables: { callId } });
       } else {

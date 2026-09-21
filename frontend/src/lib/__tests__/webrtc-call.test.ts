@@ -118,4 +118,86 @@ describe('MeshCallSession signaling', () => {
     expect(offered).toEqual([1, 2, 3]);
     session.close();
   });
+
+  it('exchanges offer/answer so both peers see each other (mutual connection)', async () => {
+    class FakeMediaStream {
+      private tracks: MediaStreamTrack[];
+      constructor(tracks: MediaStreamTrack[] = []) {
+        this.tracks = [...tracks];
+      }
+      getTracks() {
+        return this.tracks;
+      }
+      addTrack(track: MediaStreamTrack) {
+        this.tracks.push(track);
+      }
+    }
+    (global as unknown as { MediaStream: unknown }).MediaStream = FakeMediaStream;
+
+    const pcs: FakePC[] = [];
+    (global as unknown as { RTCPeerConnection: unknown }).RTCPeerConnection = jest
+      .fn()
+      .mockImplementation(() => {
+        const pc = new FakePC();
+        pcs.push(pc);
+        return pc;
+      });
+
+    const remoteFor1 = jest.fn();
+    const remoteFor2 = jest.fn();
+
+    let session1: MeshCallSession;
+    let session2: MeshCallSession;
+
+    session1 = new MeshCallSession(1, {
+      onRemoteStream: remoteFor1,
+      onRemoteStreamRemoved: jest.fn(),
+      sendSignal: async (msg) => {
+        await session2.handleSignal({
+          fromUserId: 1,
+          toUserId: msg.toUserId,
+          signalType: msg.signalType,
+          payload: msg.payload,
+        });
+      },
+    });
+    session2 = new MeshCallSession(2, {
+      onRemoteStream: remoteFor2,
+      onRemoteStreamRemoved: jest.fn(),
+      sendSignal: async (msg) => {
+        await session1.handleSignal({
+          fromUserId: 2,
+          toUserId: msg.toUserId,
+          signalType: msg.signalType,
+          payload: msg.payload,
+        });
+      },
+    });
+
+    await session1.connectToPeers([2], { initiate: false });
+    await session2.connectToPeers([1], { initiate: true });
+
+    const offerSent = pcs.some(
+      (pc) => (pc.createOffer as jest.Mock).mock.calls.length > 0,
+    );
+    const answerSent = pcs.some(
+      (pc) => (pc.createAnswer as jest.Mock).mock.calls.length > 0,
+    );
+    expect(offerSent).toBe(true);
+    expect(answerSent).toBe(true);
+
+    const track1 = { id: 'a1', kind: 'audio' } as MediaStreamTrack;
+    const track2 = { id: 'a2', kind: 'audio' } as MediaStreamTrack;
+    const stream1 = new FakeMediaStream([track1]) as unknown as MediaStream;
+    const stream2 = new FakeMediaStream([track2]) as unknown as MediaStream;
+
+    pcs[0].ontrack?.({ streams: [stream2], track: track2 });
+    pcs[1].ontrack?.({ streams: [stream1], track: track1 });
+
+    expect(remoteFor1).toHaveBeenCalledWith(2, expect.any(Object));
+    expect(remoteFor2).toHaveBeenCalledWith(1, expect.any(Object));
+
+    session1.close();
+    session2.close();
+  });
 });
