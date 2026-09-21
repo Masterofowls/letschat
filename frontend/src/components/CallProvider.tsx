@@ -99,8 +99,10 @@ export function CallProvider({ children, currentUserId }: Props) {
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signalCallId, setSignalCallId] = useState<number | null>(null);
   const sessionRef = useRef<MeshCallSession | null>(null);
   const activeCallIdRef = useRef<number | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   const [startCallMut] = useMutation(START_CALL);
   const [joinCallMut] = useMutation(JOIN_CALL);
@@ -109,22 +111,35 @@ export function CallProvider({ children, currentUserId }: Props) {
   const [sendSignalMut] = useMutation(SEND_CALL_SIGNAL);
   const [updateMediaMut] = useMutation(UPDATE_CALL_MEDIA);
 
-  const cleanupSession = useCallback(() => {
+  const cleanupSession = useCallback((stopLocal = true) => {
     sessionRef.current?.close();
     sessionRef.current = null;
-    stopMediaStream(localStream);
-    setLocalStream(null);
+    if (stopLocal) {
+      stopMediaStream(localStreamRef.current);
+      localStreamRef.current = null;
+      setLocalStream(null);
+    }
     setRemoteStreams({});
     activeCallIdRef.current = null;
-  }, [localStream]);
+    setSignalCallId(null);
+  }, []);
 
   const attachSession = useCallback(
-    async (call: CallGql, stream: MediaStream) => {
+    async (call: CallGql, stream: MediaStream, initiateOffers: boolean) => {
       if (!currentUserId) return;
-      cleanupSession();
+      // Tear down prior PC mesh but keep the new local stream alive.
+      sessionRef.current?.close();
+      sessionRef.current = null;
+      if (localStreamRef.current && localStreamRef.current !== stream) {
+        stopMediaStream(localStreamRef.current);
+      }
+
       activeCallIdRef.current = call.id;
+      setSignalCallId(call.id);
+      localStreamRef.current = stream;
       setLocalStream(stream);
       setCameraOff(call.mediaType === 'audio' || stream.getVideoTracks().length === 0);
+      setMuted(false);
 
       const session = new MeshCallSession(currentUserId, {
         onRemoteStream: (userId, remote) => {
@@ -156,9 +171,9 @@ export function CallProvider({ children, currentUserId }: Props) {
       const peerIds = (call.participants ?? [])
         .map((p) => p.userId)
         .filter((id) => id !== currentUserId);
-      await session.connectToPeers(peerIds);
+      await session.connectToPeers(peerIds, { initiate: initiateOffers });
     },
-    [cleanupSession, currentUserId, sendSignalMut],
+    [currentUserId, sendSignalMut],
   );
 
   useSubscription(CALL_UPDATED_SUBSCRIPTION, {
@@ -169,8 +184,8 @@ export function CallProvider({ children, currentUserId }: Props) {
       const call = normalizeCallPayload(raw);
 
       if (call.status === 'ended') {
-        if (activeCallIdRef.current === call.id) {
-          cleanupSession();
+        if (activeCallIdRef.current === call.id || incomingCall?.id === call.id) {
+          cleanupSession(true);
           setActiveCall(null);
         }
         setIncomingCall((prev) => (prev?.id === call.id ? null : prev));
@@ -178,13 +193,14 @@ export function CallProvider({ children, currentUserId }: Props) {
       }
 
       const inCall = call.participants?.some((p) => p.userId === currentUserId);
-      if (inCall) {
+      if (inCall && activeCallIdRef.current === call.id) {
         setActiveCall(call);
         setIncomingCall(null);
         const peers = (call.participants ?? [])
           .map((p) => p.userId)
           .filter((id) => id !== currentUserId);
-        void sessionRef.current?.connectToPeers(peers);
+        // Existing member: wait for joiner offers (no initiate).
+        void sessionRef.current?.connectToPeers(peers, { initiate: false });
         return;
       }
 
@@ -199,8 +215,8 @@ export function CallProvider({ children, currentUserId }: Props) {
   });
 
   useSubscription(CALL_SIGNAL_SUBSCRIPTION, {
-    skip: !activeCall?.id,
-    variables: { callId: activeCall?.id },
+    skip: !signalCallId,
+    variables: { callId: signalCallId },
     onData: ({ data }) => {
       const signal = data.data?.callSignal;
       if (!signal || !sessionRef.current) return;
@@ -227,7 +243,8 @@ export function CallProvider({ children, currentUserId }: Props) {
         });
         const call = normalizeCallPayload(result.data?.startCall as CallGql);
         setActiveCall(call);
-        await attachSession(call, stream);
+        // Starter has no peers yet — no offers.
+        await attachSession(call, stream, false);
       } catch (err) {
         stopMediaStream(stream);
         setError(describePermissionError(err));
@@ -239,14 +256,17 @@ export function CallProvider({ children, currentUserId }: Props) {
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;
     setError(null);
+    let stream: MediaStream | null = null;
     try {
-      const stream = await requestCallMedia(incomingCall.mediaType);
+      stream = await requestCallMedia(incomingCall.mediaType);
       const result = await joinCallMut({ variables: { callId: incomingCall.id } });
       const call = normalizeCallPayload(result.data?.joinCall as CallGql);
       setIncomingCall(null);
       setActiveCall(call);
-      await attachSession(call, stream);
+      // Joiner initiates offers to everyone already in the call.
+      await attachSession(call, stream, true);
     } catch (err) {
+      stopMediaStream(stream);
       setError(describePermissionError(err));
     }
   }, [attachSession, incomingCall, joinCallMut]);
@@ -258,19 +278,26 @@ export function CallProvider({ children, currentUserId }: Props) {
 
   const hangUp = useCallback(async () => {
     const call = activeCall;
-    cleanupSession();
+    const callId = call?.id ?? activeCallIdRef.current;
+    const maxParticipants = call?.maxParticipants ?? 2;
+    cleanupSession(true);
     setActiveCall(null);
-    if (!call) return;
+    if (!callId) return;
     try {
-      if (call.createdById === currentUserId && call.participants && call.participants.length <= 2) {
-        await endCallMut({ variables: { callId: call.id } });
+      // 1:1 (or DM-sized) hangup ends the whole call so the other side closes.
+      if (maxParticipants <= 2) {
+        await endCallMut({ variables: { callId } });
       } else {
-        await leaveCallMut({ variables: { callId: call.id } });
+        await leaveCallMut({ variables: { callId } });
       }
     } catch {
-      // ignore
+      try {
+        await endCallMut({ variables: { callId } });
+      } catch {
+        // ignore
+      }
     }
-  }, [activeCall, cleanupSession, currentUserId, endCallMut, leaveCallMut]);
+  }, [activeCall, cleanupSession, endCallMut, leaveCallMut]);
 
   const toggleMute = useCallback(async () => {
     const next = !muted;
@@ -295,9 +322,8 @@ export function CallProvider({ children, currentUserId }: Props) {
   }, [activeCall, cameraOff, updateMediaMut]);
 
   useEffect(() => {
-    return () => cleanupSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => cleanupSession(true);
+  }, [cleanupSession]);
 
   const value = useMemo(
     () => ({

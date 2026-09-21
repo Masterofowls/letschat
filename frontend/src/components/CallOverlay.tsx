@@ -17,33 +17,35 @@ function RemoteTile({
   avatarUrl?: string | null;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const video = videoRef.current;
-    const audio = audioRef.current;
-    if (video) video.srcObject = stream ?? null;
-    if (audio) audio.srcObject = stream ?? null;
+    const el = videoRef.current;
+    if (!el) return;
+    el.srcObject = stream ?? null;
+    void el.play().catch(() => {
+      // Autoplay can fail until a user gesture; call UI already followed one.
+    });
     return () => {
-      if (video) video.srcObject = null;
-      if (audio) audio.srcObject = null;
+      el.srcObject = null;
     };
   }, [stream]);
 
   const hasVideo = Boolean(
-    stream?.getVideoTracks().some((t) => t.enabled && t.readyState === 'live'),
+    stream?.getVideoTracks().some((t) => t.readyState === 'live' && t.enabled),
   );
 
   return (
     <div className="relative flex aspect-video min-h-[140px] items-center justify-center overflow-hidden rounded-xl bg-[#1e1f22]">
-      {hasVideo ? (
-        <video ref={videoRef} autoPlay playsInline className="h-full w-full object-cover" />
-      ) : (
-        <>
-          <audio ref={audioRef} autoPlay />
-          <UserAvatar name={label} avatarUrl={avatarUrl} size="xl" />
-        </>
-      )}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className={cn(
+          'h-full w-full object-cover',
+          hasVideo ? 'opacity-100' : 'pointer-events-none absolute opacity-0',
+        )}
+      />
+      {!hasVideo ? <UserAvatar name={label} avatarUrl={avatarUrl} size="xl" /> : null}
       <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
         {label}
       </span>
@@ -69,6 +71,7 @@ export function CallOverlay() {
     const el = localRef.current;
     if (!el || !localStream) return;
     el.srcObject = localStream;
+    void el.play().catch(() => undefined);
     return () => {
       el.srcObject = null;
     };
@@ -77,19 +80,23 @@ export function CallOverlay() {
   if (!activeCall) return null;
 
   const remotes = Object.entries(remoteStreams);
-  const gridCols =
-    remotes.length <= 1 ? 'grid-cols-1' : remotes.length === 2 ? 'grid-cols-2' : 'grid-cols-2';
+  const gridCols = remotes.length <= 1 ? 'grid-cols-1' : 'grid-cols-2';
 
   return (
-    <div className="fixed inset-0 z-[65] flex flex-col bg-[#111214]/safe-pt safe-pb">
+    <div className="fixed inset-0 z-[65] flex flex-col bg-[#111214] safe-pt safe-pb">
       <header className="flex items-center justify-between px-4 py-3">
         <div>
           <p className="text-sm font-semibold text-white">
             {activeCall.mediaType === 'video' ? 'Video call' : 'Audio call'}
           </p>
           <p className="text-xs text-muted-foreground">
-            {activeCall.status === 'ringing' ? 'Ringing…' : 'Connected'} · max{' '}
-            {activeCall.maxParticipants}
+            {activeCall.status === 'ringing'
+              ? remotes.length
+                ? 'Connecting…'
+                : 'Ringing…'
+              : remotes.length
+                ? 'Connected'
+                : 'Waiting for others…'}
           </p>
         </div>
       </header>
@@ -111,6 +118,12 @@ export function CallOverlay() {
             You{muted ? ' (muted)' : ''}
           </span>
         </div>
+
+        {remotes.length === 0 ? (
+          <div className="flex aspect-video min-h-[140px] items-center justify-center rounded-xl bg-[#1e1f22] text-sm text-muted-foreground">
+            Waiting for opponent…
+          </div>
+        ) : null}
 
         {remotes.map(([userId, stream]) => {
           const participant = activeCall.participants?.find((p) => p.userId === Number(userId));

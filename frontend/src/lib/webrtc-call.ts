@@ -21,13 +21,21 @@ export type MeshCallCallbacks = {
   }) => Promise<void>;
 };
 
+type ConnectOptions = {
+  /** Joiner should initiate offers; existing peers must wait for offers. */
+  initiate?: boolean;
+};
+
 /**
- * Mesh WebRTC: the joining peer creates offers to every existing participant.
- * Hard-capped by the caller (max 4 including self).
+ * Mesh WebRTC: only the joining peer creates offers to existing participants.
+ * Existing peers answer — avoids glare when both sides call connectToPeers.
  */
 export class MeshCallSession {
   private readonly peers = new Map<number, RTCPeerConnection>();
   private readonly makingOffer = new Map<number, boolean>();
+  private readonly ignoreOffer = new Map<number, boolean>();
+  private readonly pendingIce = new Map<number, RTCIceCandidateInit[]>();
+  private readonly remoteStreams = new Map<number, MediaStream>();
   private localStream: MediaStream | null = null;
 
   constructor(
@@ -52,9 +60,10 @@ export class MeshCallSession {
     }
   }
 
-  async connectToPeers(peerIds: number[]): Promise<void> {
+  async connectToPeers(peerIds: number[], options: ConnectOptions = {}): Promise<void> {
+    const initiate = options.initiate ?? false;
     const others = peerIds.filter((id) => id !== this.selfUserId);
-    await Promise.all(others.map((id) => this.ensurePeer(id, true)));
+    await Promise.all(others.map((id) => this.ensurePeer(id, initiate)));
   }
 
   async handleSignal(signal: SignalMessage): Promise<void> {
@@ -65,12 +74,22 @@ export class MeshCallSession {
       | RTCIceCandidateInit;
 
     if (signal.signalType === 'offer') {
-      const offerCollision =
-        this.makingOffer.get(signal.fromUserId) ||
-        pc.signalingState !== 'stable';
+      const readyForOffer = !this.makingOffer.get(signal.fromUserId) && pc.signalingState === 'stable';
+      const offerCollision = !readyForOffer;
       const polite = this.selfUserId > signal.fromUserId;
-      if (offerCollision && !polite) return;
+      this.ignoreOffer.set(signal.fromUserId, !polite && offerCollision);
+      if (this.ignoreOffer.get(signal.fromUserId)) return;
+
+      if (offerCollision) {
+        try {
+          await pc.setLocalDescription({ type: 'rollback' });
+        } catch {
+          // ignore
+        }
+      }
+
       await pc.setRemoteDescription(data as RTCSessionDescriptionInit);
+      await this.flushIce(signal.fromUserId, pc);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await this.callbacks.sendSignal({
@@ -82,15 +101,23 @@ export class MeshCallSession {
     }
 
     if (signal.signalType === 'answer') {
+      if (pc.signalingState !== 'have-local-offer') return;
       await pc.setRemoteDescription(data as RTCSessionDescriptionInit);
+      await this.flushIce(signal.fromUserId, pc);
       return;
     }
 
     if (signal.signalType === 'ice' && data) {
+      if (!pc.remoteDescription) {
+        const queue = this.pendingIce.get(signal.fromUserId) ?? [];
+        queue.push(data as RTCIceCandidateInit);
+        this.pendingIce.set(signal.fromUserId, queue);
+        return;
+      }
       try {
         await pc.addIceCandidate(data as RTCIceCandidateInit);
       } catch {
-        // Ignore candidates that arrive before remote description.
+        // Ignore late/invalid candidates.
       }
     }
   }
@@ -113,6 +140,9 @@ export class MeshCallSession {
     pc.close();
     this.peers.delete(userId);
     this.makingOffer.delete(userId);
+    this.ignoreOffer.delete(userId);
+    this.pendingIce.delete(userId);
+    this.remoteStreams.delete(userId);
     this.callbacks.onRemoteStreamRemoved(userId);
   }
 
@@ -120,8 +150,20 @@ export class MeshCallSession {
     for (const userId of [...this.peers.keys()]) {
       this.removePeer(userId);
     }
-    this.localStream?.getTracks().forEach((t) => t.stop());
+    // Do not stop local tracks here — caller owns the MediaStream lifecycle.
     this.localStream = null;
+  }
+
+  private async flushIce(userId: number, pc: RTCPeerConnection): Promise<void> {
+    const queued = this.pendingIce.get(userId) ?? [];
+    this.pendingIce.set(userId, []);
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   private async ensurePeer(userId: number, createOffer: boolean): Promise<RTCPeerConnection> {
@@ -136,9 +178,15 @@ export class MeshCallSession {
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
     this.peers.set(userId, pc);
 
-    this.localStream?.getTracks().forEach((track) => {
-      pc.addTrack(track, this.localStream!);
-    });
+    if (this.localStream) {
+      for (const track of this.localStream.getTracks()) {
+        pc.addTrack(track, this.localStream);
+      }
+    } else {
+      // Ensure recv transceivers exist even before local media is attached.
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+      pc.addTransceiver('video', { direction: 'recvonly' });
+    }
 
     pc.onicecandidate = (event) => {
       if (!event.candidate) return;
@@ -150,8 +198,18 @@ export class MeshCallSession {
     };
 
     pc.ontrack = (event) => {
-      const stream = event.streams[0] ?? new MediaStream([event.track]);
-      this.callbacks.onRemoteStream(userId, stream);
+      let stream = this.remoteStreams.get(userId);
+      if (!stream) {
+        stream = event.streams[0] ? event.streams[0] : new MediaStream();
+        this.remoteStreams.set(userId, stream);
+      }
+      if (!stream.getTracks().some((t) => t.id === event.track.id)) {
+        stream.addTrack(event.track);
+      }
+      // Clone reference bump so React sees an update when tracks are added.
+      const notified = new MediaStream(stream.getTracks());
+      this.remoteStreams.set(userId, notified);
+      this.callbacks.onRemoteStream(userId, notified);
     };
 
     pc.onconnectionstatechange = () => {
@@ -171,6 +229,7 @@ export class MeshCallSession {
     try {
       this.makingOffer.set(userId, true);
       const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') return;
       await pc.setLocalDescription(offer);
       await this.callbacks.sendSignal({
         toUserId: userId,

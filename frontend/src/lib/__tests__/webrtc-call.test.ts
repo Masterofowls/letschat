@@ -27,6 +27,7 @@ describe('MeshCallSession signaling', () => {
     connectionState: RTCPeerConnectionState = 'new';
 
     addTrack = jest.fn();
+    addTransceiver = jest.fn();
     getSenders = jest.fn(() => []);
     close = jest.fn();
     addIceCandidate = jest.fn(async () => undefined);
@@ -57,13 +58,26 @@ describe('MeshCallSession signaling', () => {
       sendSignal,
     });
 
-    await session.connectToPeers([1, 2]);
+    await session.connectToPeers([1, 2], { initiate: true });
     expect(sendSignal).toHaveBeenCalledWith(
       expect.objectContaining({
         toUserId: 1,
         signalType: 'offer',
       }),
     );
+    session.close();
+  });
+
+  it('does not send offers when connecting as existing peer', async () => {
+    const sendSignal = jest.fn().mockResolvedValue(undefined);
+    const session = new MeshCallSession(1, {
+      onRemoteStream: jest.fn(),
+      onRemoteStreamRemoved: jest.fn(),
+      sendSignal,
+    });
+
+    await session.connectToPeers([1, 2], { initiate: false });
+    expect(sendSignal).not.toHaveBeenCalled();
     session.close();
   });
 
@@ -99,7 +113,7 @@ describe('MeshCallSession signaling', () => {
       sendSignal,
     });
 
-    await session.connectToPeers([1, 2, 3, 4]);
+    await session.connectToPeers([1, 2, 3, 4], { initiate: true });
     const offered = sendSignal.mock.calls.map((c) => c[0].toUserId).sort();
     expect(offered).toEqual([1, 2, 3]);
     session.close();

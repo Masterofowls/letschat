@@ -106,11 +106,16 @@ export class CallsService {
     const call = await this.requireCall(callId);
     await this.callsRepository.markLeft(call.id, userId);
     const remaining = await this.callsRepository.countActive(call.id);
-    if (remaining === 0) {
+    // 1:1 (or last-person-left): ending for one side ends the whole call.
+    if (remaining <= 1 || call.maxParticipants <= 2) {
       await this.callsRepository.updateCall(call.id, {
         status: 'ended',
         endedAt: new Date(),
       });
+      const stillActive = await this.callsRepository.listParticipants(call.id, true);
+      for (const p of stillActive) {
+        await this.callsRepository.markLeft(call.id, p.userId);
+      }
     }
     const refreshed = await this.requireCall(call.id);
     const callType = await this.toCallType(refreshed);
