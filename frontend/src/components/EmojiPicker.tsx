@@ -26,6 +26,7 @@ export function EmojiPicker({ onPick, className }: Props) {
         type="button"
         size="icon"
         variant="ghost"
+        className="h-11 w-11 touch-manipulation sm:h-9 sm:w-9"
         aria-label="Insert emoji"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -33,13 +34,13 @@ export function EmojiPicker({ onPick, className }: Props) {
         <Smile className="h-5 w-5" />
       </Button>
       {open ? (
-        <div className="absolute bottom-11 left-0 z-30 w-64 rounded-lg bg-[#111214] p-2 shadow-elev">
+        <div className="absolute bottom-12 left-0 z-30 w-[min(18rem,calc(100vw-2rem))] rounded-lg bg-[#111214] p-2 shadow-elev sm:bottom-11 sm:w-64">
           <div className="grid grid-cols-8 gap-1">
             {EMOJIS.map((emoji) => (
               <button
                 key={emoji}
                 type="button"
-                className="rounded-md p-1 text-lg hover:bg-white/10"
+                className="flex h-10 items-center justify-center rounded-md text-lg hover:bg-white/10 sm:h-8 sm:p-1"
                 onClick={() => {
                   onPick(emoji);
                   setOpen(false);

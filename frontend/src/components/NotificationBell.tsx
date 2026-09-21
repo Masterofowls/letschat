@@ -59,7 +59,7 @@ export function NotificationBell() {
           type="button"
           variant="ghost"
           size="icon"
-          className="relative text-muted-foreground hover:text-foreground"
+          className="relative h-11 w-11 touch-manipulation text-muted-foreground hover:text-foreground"
           aria-label={`Notifications${unread ? `, ${unread} unread` : ''}`}
         >
           <BellIcon size={20} />
@@ -70,7 +70,10 @@ export function NotificationBell() {
           ) : null}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 border-none bg-[#111214] p-0 shadow-elev">
+      <DropdownMenuContent
+        align="end"
+        className="w-[min(20rem,calc(100vw-1.5rem))] border-none bg-[#111214] p-0 shadow-elev"
+      >
         <div className="flex items-center justify-between px-1">
           <DropdownMenuLabel>Inbox</DropdownMenuLabel>
           <Button

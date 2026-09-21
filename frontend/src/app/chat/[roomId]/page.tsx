@@ -3,12 +3,18 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@apollo/client';
-import { Copy, Hash, Link2, Users } from 'lucide-react';
+import { ArrowLeft, Copy, Hash, Link2, Users } from 'lucide-react';
 import { MessageList } from '@/components/MessageList';
 import { NotificationBell } from '@/components/NotificationBell';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { AppShell } from '@/components/AppShell';
-import { ME_QUERY, MY_DIRECT_MESSAGES_QUERY, MY_ROOMS_QUERY, ROOMS_QUERY } from '@/lib/graphql/queries';
+import { MobileMenuButton } from '@/components/MobileMenuButton';
+import {
+  ME_QUERY,
+  MY_DIRECT_MESSAGES_QUERY,
+  MY_ROOMS_QUERY,
+  ROOMS_QUERY,
+} from '@/lib/graphql/queries';
 import { getToken } from '@/lib/apollo-client';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
@@ -34,7 +40,7 @@ export default function ChatRoomPage() {
 
   if (!ready || Number.isNaN(roomId)) {
     return (
-      <main className="flex h-screen items-center justify-center bg-discord-deepest text-muted-foreground">
+      <main className="flex h-dvh items-center justify-center bg-discord-deepest text-muted-foreground">
         Loading chat…
       </main>
     );
@@ -64,8 +70,19 @@ export default function ChatRoomPage() {
   return (
     <AppShell
       header={
-        <header className="flex h-12 items-center justify-between gap-3 border-b border-black/20 px-4 shadow-sm">
-          <div className="flex min-w-0 items-center gap-2">
+        <header className="app-header justify-between">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+            <MobileMenuButton />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0 touch-manipulation md:hidden"
+              aria-label="Back to friends"
+              onClick={() => router.push('/')}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
             {isDm && peer ? (
               <UserAvatar
                 name={peer.displayName || peer.username}
@@ -73,26 +90,27 @@ export default function ChatRoomPage() {
                 size="sm"
               />
             ) : (
-              <Hash className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <Hash className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />
             )}
             <h1 className="truncate font-semibold">{roomName}</h1>
             {!isDm && channel?.description ? (
               <>
-                <span className="mx-1 hidden h-6 w-px bg-white/10 sm:block" />
-                <p className="hidden truncate text-sm text-muted-foreground sm:block">
+                <span className="mx-1 hidden h-6 w-px bg-white/10 lg:block" />
+                <p className="hidden truncate text-sm text-muted-foreground lg:block">
                   {channel.description}
                 </p>
               </>
             ) : null}
           </div>
-          <GlobalSearch className="hidden md:block" />
-          <div className="flex items-center gap-1">
+          <GlobalSearch className="mx-1 hidden min-w-0 flex-1 md:block" />
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+            <GlobalSearch className="md:hidden" compact />
             {publicPath ? (
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="gap-1.5 text-muted-foreground"
+                className="h-11 gap-1.5 touch-manipulation text-muted-foreground sm:h-8"
                 onClick={() => void copyPublicLink()}
                 aria-label="Copy public room link"
               >
@@ -104,7 +122,13 @@ export default function ChatRoomPage() {
                 <span className="hidden sm:inline">{copied ? 'Copied' : 'Invite link'}</span>
               </Button>
             ) : null}
-            <Button type="button" size="icon" variant="ghost" aria-label="Member list">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="hidden h-11 w-11 sm:inline-flex"
+              aria-label="Member list"
+            >
               <Users className="h-5 w-5 text-muted-foreground" />
             </Button>
             <NotificationBell />

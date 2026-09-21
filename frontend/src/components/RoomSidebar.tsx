@@ -29,7 +29,7 @@ type Room = {
   description?: string | null;
 };
 
-export function RoomSidebar() {
+export function RoomSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
   const { data: meData, refetch: refetchMe } = useQuery(ME_QUERY);
   const { data: myRoomsData, refetch: refetchMy } = useQuery<{ myRooms: Room[] }>(
@@ -69,10 +69,16 @@ export function RoomSidebar() {
   const display = meData?.me?.displayName || meData?.me?.username || 'Guest';
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col bg-discord-sidebar">
+    <aside
+      className={cn(
+        'flex w-60 shrink-0 flex-col bg-discord-sidebar',
+        'max-md:w-auto max-md:flex-1',
+        className,
+      )}
+    >
       <button
         type="button"
-        className="flex h-12 items-center justify-between border-b border-black/20 px-4 text-left shadow-sm transition hover:bg-black/10"
+        className="flex h-12 min-h-12 items-center justify-between border-b border-black/20 px-4 text-left shadow-sm transition hover:bg-black/10 safe-pt"
       >
         <span className="truncate text-base font-semibold">LetsChat</span>
         <ChevronDownIcon size={16} className="text-muted-foreground" />
@@ -139,6 +145,7 @@ export function RoomSidebar() {
                     type="button"
                     size="sm"
                     variant="blurple"
+                    className="min-h-9 touch-manipulation"
                     onClick={async () => {
                       await joinRoom({ variables: { roomId: room.id } });
                       await Promise.all([refetchMy(), refetchAll()]);
@@ -186,7 +193,7 @@ export function RoomSidebar() {
       </ScrollArea>
 
       <Separator className="bg-black/30" />
-      <div className="flex items-center gap-2 bg-[#232428] px-2 py-1.5">
+      <div className="flex items-center gap-2 bg-[#232428] px-2 py-1.5 safe-pb">
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-white/5"

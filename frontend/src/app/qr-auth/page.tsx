@@ -35,8 +35,8 @@ function QrAuthInner() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-discord-deepest p-6">
-      <div className="w-full max-w-md rounded-lg bg-discord-sidebar p-6 text-center shadow-elev">
+    <main className="flex min-h-dvh items-center justify-center bg-discord-deepest p-4 sm:p-6">
+      <div className="w-full max-w-md rounded-lg bg-discord-sidebar p-5 text-center shadow-elev sm:p-6">
         <h1 className="text-xl font-semibold text-white">QR sign-in</h1>
         <p className="mt-2 text-sm text-muted-foreground">{message}</p>
         {status === 'ready' && sessionId ? (
@@ -56,7 +56,7 @@ export default function QrAuthPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-discord-deepest text-muted-foreground">
+        <main className="flex min-h-dvh items-center justify-center bg-discord-deepest text-muted-foreground">
           Loading…
         </main>
       }

@@ -137,7 +137,7 @@ export function MessageList({ roomId, currentUserId, roomName, isDm }: Props) {
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-discord-modifier">
               <Hash className="h-10 w-10 text-foreground" />
             </div>
-            <h2 className="text-3xl font-bold tracking-tight">
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
               {isDm
                 ? `Direct messages with ${roomName ?? 'friend'}`
                 : `Welcome to #${roomName ?? `room-${roomId}`}!`}
@@ -229,7 +229,7 @@ export function MessageList({ roomId, currentUserId, roomName, isDm }: Props) {
                     </p>
                     <button
                       type="button"
-                      className="mt-0.5 hidden shrink-0 rounded p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground group-hover:inline-flex"
+                      className="mt-0.5 inline-flex shrink-0 touch-manipulation rounded p-2 text-muted-foreground opacity-100 hover:bg-white/5 hover:text-foreground md:p-1 md:opacity-0 md:group-hover:opacity-100"
                       aria-label="Reply"
                       onClick={() => setReplyTo(message)}
                     >
@@ -360,7 +360,7 @@ export function MessageInput({
     replyTo?.sender?.displayName || replyTo?.sender?.username || 'message';
 
   return (
-    <form className="px-4 pb-6" onSubmit={onSubmit}>
+    <form className="safe-pb px-3 pb-4 sm:px-4 sm:pb-6" onSubmit={onSubmit}>
       {replyTo ? (
         <div className="mb-2 flex items-center justify-between rounded-t-lg bg-[#2b2d31] px-3 py-2 text-sm">
           <div className="min-w-0">
@@ -369,7 +369,7 @@ export function MessageInput({
           </div>
           <button
             type="button"
-            className="rounded p-1 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+            className="rounded p-2 text-muted-foreground hover:bg-white/5 hover:text-foreground"
             aria-label="Cancel reply"
             onClick={() => onClearReply?.()}
           >
@@ -379,7 +379,7 @@ export function MessageInput({
       ) : null}
       <div
         className={cn(
-          'flex items-center gap-2 bg-[#383a40] px-3 py-1.5',
+          'flex items-center gap-1 bg-[#383a40] px-2 py-1.5 sm:gap-2 sm:px-3',
           replyTo ? 'rounded-b-lg' : 'rounded-lg',
         )}
       >
@@ -399,9 +399,16 @@ export function MessageInput({
           autoComplete="off"
           disabled={loading}
           onChange={onChange}
-          className="h-10 flex-1 rounded-none border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+          className="h-11 flex-1 rounded-none border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0 sm:h-10 sm:text-sm"
         />
-        <Button type="submit" disabled={loading} size="icon" variant="ghost" aria-label="Send">
+        <Button
+          type="submit"
+          disabled={loading}
+          size="icon"
+          variant="ghost"
+          className="h-11 w-11 touch-manipulation sm:h-9 sm:w-9"
+          aria-label="Send"
+        >
           <SendIcon size={18} />
         </Button>
       </div>

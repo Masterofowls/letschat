@@ -54,7 +54,7 @@ export default function PublicProfilePage({ params }: Props) {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-discord-deepest text-muted-foreground">
+      <main className="flex min-h-dvh items-center justify-center bg-discord-deepest text-muted-foreground">
         Loading profile…
       </main>
     );
@@ -62,7 +62,7 @@ export default function PublicProfilePage({ params }: Props) {
 
   if (error || !data?.publicProfile) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-discord-deepest p-6 text-center">
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-discord-deepest p-6 text-center">
         <h1 className="text-2xl font-bold text-white">Profile not found</h1>
         <p className="text-muted-foreground">@{username} doesn’t exist on LetsChat.</p>
         <Button asChild variant="blurple">
@@ -96,7 +96,7 @@ export default function PublicProfilePage({ params }: Props) {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#313338] p-6">
+    <main className="relative flex min-h-dvh items-start justify-center overflow-y-auto bg-[#313338] p-4 py-8 sm:items-center sm:p-6">
       <div
         className="pointer-events-none absolute inset-0 opacity-40"
         style={{
@@ -105,8 +105,8 @@ export default function PublicProfilePage({ params }: Props) {
         }}
       />
       <article className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl bg-[#2b2d31] shadow-elev">
-        <div className="h-28 bg-gradient-to-r from-[#5865F2] to-[#eb459e]" />
-        <div className="relative px-6 pb-8 pt-0">
+        <div className="h-24 bg-gradient-to-r from-[#5865F2] to-[#eb459e] sm:h-28" />
+        <div className="relative px-4 pb-8 pt-0 sm:px-6">
           <div className="-mt-12 mb-4">
             <UserAvatar name={display} avatarUrl={profile.avatarUrl} size="xl" />
           </div>

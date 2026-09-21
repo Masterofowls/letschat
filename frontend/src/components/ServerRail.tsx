@@ -16,7 +16,7 @@ import {
 
 type Room = { id: number; name: string };
 
-export function ServerRail() {
+export function ServerRail({ className }: { className?: string }) {
   const pathname = usePathname();
   const { data } = useQuery<{ myRooms: Room[] }>(MY_ROOMS_QUERY);
   const homeActive = pathname === '/';
@@ -24,7 +24,11 @@ export function ServerRail() {
   return (
     <TooltipProvider delayDuration={120}>
       <nav
-        className="flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto bg-discord-deepest py-3 scrollbar-thin"
+        className={cn(
+          'flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto bg-discord-deepest py-3 scrollbar-thin',
+          'safe-pt',
+          className,
+        )}
         aria-label="Servers"
       >
         <Tooltip>

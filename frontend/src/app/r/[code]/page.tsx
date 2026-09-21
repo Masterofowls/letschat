@@ -33,7 +33,7 @@ export default function PublicRoomInvitePage() {
 
   if (!ready) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-discord-deepest text-muted-foreground">
+      <main className="flex min-h-dvh items-center justify-center bg-discord-deepest text-muted-foreground">
         Loading invite…
       </main>
     );
@@ -41,7 +41,7 @@ export default function PublicRoomInvitePage() {
 
   if (!getToken()) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-discord-deepest p-6 text-center">
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-discord-deepest p-6 text-center">
         <h1 className="text-2xl font-bold text-white">Room invite</h1>
         <p className="max-w-sm text-muted-foreground">
           Sign in to join this room via public link <code className="text-primary">/r/{inviteCode}</code>.
@@ -55,7 +55,7 @@ export default function PublicRoomInvitePage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-discord-deepest text-muted-foreground">
+      <main className="flex min-h-dvh items-center justify-center bg-discord-deepest text-muted-foreground">
         Loading room…
       </main>
     );
@@ -63,7 +63,7 @@ export default function PublicRoomInvitePage() {
 
   if (error || !data?.roomByInvite) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-discord-deepest p-6 text-center">
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-discord-deepest p-6 text-center">
         <h1 className="text-2xl font-bold text-white">Invite not found</h1>
         <p className="text-muted-foreground">This public room link is invalid.</p>
         <Button asChild variant="blurple">
@@ -86,7 +86,7 @@ export default function PublicRoomInvitePage() {
   }
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#313338] p-6">
+    <main className="relative flex min-h-dvh items-center justify-center overflow-y-auto bg-[#313338] p-4 sm:overflow-hidden sm:p-6">
       <div
         className="pointer-events-none absolute inset-0 opacity-40"
         style={{

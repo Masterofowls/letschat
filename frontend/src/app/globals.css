@@ -31,25 +31,47 @@
     --discord-main: 220 6% 21%;
     --discord-modifier: 220 6% 25%;
     --discord-online: 139 47% 44%;
+
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   html,
   body {
     @apply h-full overflow-hidden;
+    height: 100dvh;
   }
 
   body {
     @apply bg-[hsl(var(--discord-deepest))] font-sans text-foreground antialiased;
   }
+
+  /* Larger tap targets on coarse pointers */
+  @media (pointer: coarse) {
+    button,
+    a,
+    [role='button'] {
+      touch-action: manipulation;
+    }
+  }
 }
 
 @layer components {
   .discord-shell {
-    @apply flex h-screen w-full overflow-hidden bg-[hsl(var(--discord-deepest))];
+    @apply flex w-full overflow-hidden bg-[hsl(var(--discord-deepest))];
+    height: 100dvh;
+    max-height: 100dvh;
   }
 
   .server-pill {
@@ -68,12 +90,22 @@
     @apply flex items-center gap-1.5 rounded-[4px] px-2 py-1.5 text-[15px] text-muted-foreground transition-colors hover:bg-[hsl(var(--discord-modifier))] hover:text-foreground;
   }
 
+  @media (max-width: 767px) {
+    .channel-item {
+      @apply min-h-11 py-2.5;
+    }
+  }
+
   .channel-item-active {
     @apply bg-[hsl(var(--discord-modifier))] text-foreground;
   }
 
   .message-row {
-    @apply relative flex gap-4 px-4 py-0.5 hover:bg-black/10;
+    @apply relative flex gap-3 px-3 py-0.5 hover:bg-black/10 sm:gap-4 sm:px-4;
+  }
+
+  .app-header {
+    @apply flex h-12 min-h-12 items-center gap-2 border-b border-black/20 px-2 shadow-sm sm:gap-3 sm:px-4;
   }
 }
 
@@ -81,5 +113,22 @@
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--discord-modifier)) transparent;
+  }
+
+  .safe-pt {
+    padding-top: max(0.25rem, var(--safe-top));
+  }
+
+  .safe-pb {
+    padding-bottom: max(0.5rem, var(--safe-bottom));
+  }
+
+  .safe-px {
+    padding-left: max(0.75rem, var(--safe-left));
+    padding-right: max(0.75rem, var(--safe-right));
+  }
+
+  .touch-manipulation {
+    touch-action: manipulation;
   }
 }
