@@ -29,6 +29,11 @@ import {
 } from '@/lib/media-permissions';
 import { CallOverlay } from '@/components/CallOverlay';
 import { IncomingCallBanner } from '@/components/IncomingCallBanner';
+import {
+  normalizeCallPayload,
+  toGraphqlCallMediaType,
+  type CallMedia,
+} from '@/lib/call-enums';
 
 export type CallGql = {
   id: number;
@@ -59,7 +64,7 @@ type CallContextValue = {
   muted: boolean;
   cameraOff: boolean;
   error: string | null;
-  startCall: (roomId: number, mediaType: 'audio' | 'video') => Promise<void>;
+  startCall: (roomId: number, mediaType: CallMedia) => Promise<void>;
   acceptCall: () => Promise<void>;
   declineCall: () => Promise<void>;
   hangUp: () => Promise<void>;
@@ -159,8 +164,9 @@ export function CallProvider({ children, currentUserId }: Props) {
   useSubscription(CALL_UPDATED_SUBSCRIPTION, {
     skip: !currentUserId,
     onData: ({ data }) => {
-      const call = data.data?.callUpdated as CallGql | undefined;
-      if (!call || !currentUserId) return;
+      const raw = data.data?.callUpdated as CallGql | undefined;
+      if (!raw || !currentUserId) return;
+      const call = normalizeCallPayload(raw);
 
       if (call.status === 'ended') {
         if (activeCallIdRef.current === call.id) {
@@ -208,20 +214,23 @@ export function CallProvider({ children, currentUserId }: Props) {
   });
 
   const startCall = useCallback(
-    async (roomId: number, mediaType: 'audio' | 'video') => {
+    async (roomId: number, mediaType: CallMedia) => {
       if (!currentUserId) return;
       setError(null);
+      let stream: MediaStream | null = null;
       try {
-        const stream = await requestCallMedia(mediaType);
+        stream = await requestCallMedia(mediaType);
         const result = await startCallMut({
-          variables: { input: { roomId, mediaType } },
+          variables: {
+            input: { roomId, mediaType: toGraphqlCallMediaType(mediaType) },
+          },
         });
-        const call = result.data?.startCall as CallGql;
+        const call = normalizeCallPayload(result.data?.startCall as CallGql);
         setActiveCall(call);
         await attachSession(call, stream);
       } catch (err) {
+        stopMediaStream(stream);
         setError(describePermissionError(err));
-        throw err;
       }
     },
     [attachSession, currentUserId, startCallMut],
@@ -233,7 +242,7 @@ export function CallProvider({ children, currentUserId }: Props) {
     try {
       const stream = await requestCallMedia(incomingCall.mediaType);
       const result = await joinCallMut({ variables: { callId: incomingCall.id } });
-      const call = result.data?.joinCall as CallGql;
+      const call = normalizeCallPayload(result.data?.joinCall as CallGql);
       setIncomingCall(null);
       setActiveCall(call);
       await attachSession(call, stream);
@@ -326,6 +335,22 @@ export function CallProvider({ children, currentUserId }: Props) {
   return (
     <CallContext.Provider value={value}>
       {children}
+      {error && !activeCall ? (
+        <div
+          role="alert"
+          className="fixed inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-[70] mx-auto max-w-md rounded-xl bg-destructive/95 px-4 py-3 text-sm text-white shadow-elev sm:inset-x-auto sm:right-4"
+        >
+          <p className="font-medium">Call failed</p>
+          <p className="mt-1 opacity-90">{error}</p>
+          <button
+            type="button"
+            className="mt-2 text-xs underline"
+            onClick={() => setError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {incomingCall ? <IncomingCallBanner /> : null}
       {activeCall ? <CallOverlay /> : null}
     </CallContext.Provider>

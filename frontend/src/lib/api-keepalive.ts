@@ -1,15 +1,21 @@
 'use client';
 
 /**
- * Pings the Render API so free-tier instances do not sleep during an active session.
- * Interval is under Render's ~15m idle spin-down window.
+ * Pings the API so Render free-tier instances do not sleep during a session.
+ * Uses GraphQL POST (not /health) — ad blockers often block URLs containing "health".
  */
-export function startApiKeepAlive(healthUrl: string, intervalMs = 4 * 60 * 1000): () => void {
+export function startApiKeepAlive(graphqlUrl: string, intervalMs = 4 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => undefined;
 
   const ping = () => {
-    void fetch(healthUrl, { method: 'GET', cache: 'no-store', mode: 'cors' }).catch(() => {
-      // Ignore — cold starts / offline are expected occasionally.
+    void fetch(graphqlUrl, {
+      method: 'POST',
+      cache: 'no-store',
+      mode: 'cors',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }).catch(() => {
+      // Ignore cold starts / offline.
     });
   };
 
@@ -26,14 +32,7 @@ export function startApiKeepAlive(healthUrl: string, intervalMs = 4 * 60 * 1000)
   };
 }
 
+/** @deprecated kept for tests — prefer passing the GraphQL URL directly */
 export function healthUrlFromGraphql(graphqlUrl: string): string {
-  try {
-    const url = new URL(graphqlUrl);
-    url.pathname = '/health';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch {
-    return graphqlUrl.replace(/\/graphql\/?$/, '/health');
-  }
+  return graphqlUrl;
 }

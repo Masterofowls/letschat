@@ -7,7 +7,7 @@ import { RoomSidebar } from '@/components/RoomSidebar';
 import { MobileNavProvider, useMobileNav } from '@/components/MobileNavContext';
 import { CallProvider } from '@/components/CallProvider';
 import { ME_QUERY } from '@/lib/graphql/queries';
-import { healthUrlFromGraphql, startApiKeepAlive } from '@/lib/api-keepalive';
+import { startApiKeepAlive } from '@/lib/api-keepalive';
 import { cn } from '@/lib/utils';
 
 type AppShellProps = {
@@ -20,7 +20,7 @@ type AppShellProps = {
 function KeepAlive() {
   useEffect(() => {
     const graphql = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/graphql';
-    return startApiKeepAlive(healthUrlFromGraphql(graphql));
+    return startApiKeepAlive(graphql);
   }, []);
   return null;
 }
