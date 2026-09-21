@@ -2,22 +2,35 @@ services:
   - type: web
     name: letschat-api
     runtime: node
+    plan: free
+    region: frankfurt
     rootDir: backend
-    buildCommand: npm install && npm run build
-    startCommand: npm run start:prod
-    healthCheckPath: /health
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm run start:prod    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: letschat-db
-          property: connectionString
+        sync: false
+      - key: DATABASE_SSL
+        value: relax
       - key: JWT_SECRET
         generateValue: true
       - key: USE_PG_PUBSUB
         value: "false"
-
-databases:
-  - name: letschat-db
-    plan: free
+      - key: ADMIN_EMAIL
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_COOKIE_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: WEBAUTHN_RP_ID
+        sync: false
+      - key: WEBAUTHN_RP_NAME
+        value: LetsChat
+      - key: WEBAUTHN_ORIGIN
+        sync: false
+      - key: SUPABASE_URL
+        value: https://ymsoufcmxbsilhdgauxi.supabase.co
