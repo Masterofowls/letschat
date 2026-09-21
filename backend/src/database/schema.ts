@@ -172,6 +172,50 @@ export const notifications = pgTable(
   ],
 );
 
+export const calls = pgTable(
+  'calls',
+  {
+    id: serial('id').primaryKey(),
+    roomId: integer('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'cascade' }),
+    createdById: integer('created_by_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    mediaType: varchar('media_type', { length: 16 }).notNull(),
+    status: varchar('status', { length: 20 }).default('ringing').notNull(),
+    maxParticipants: integer('max_participants').default(4).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('calls_room_idx').on(table.roomId),
+    index('calls_status_idx').on(table.status),
+    index('calls_created_by_idx').on(table.createdById),
+  ],
+);
+
+export const callParticipants = pgTable(
+  'call_participants',
+  {
+    id: serial('id').primaryKey(),
+    callId: integer('call_id')
+      .notNull()
+      .references(() => calls.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+    leftAt: timestamp('left_at', { withTimezone: true }),
+    muted: boolean('muted').default(false).notNull(),
+    cameraOff: boolean('camera_off').default(false).notNull(),
+  },
+  (table) => [
+    uniqueIndex('call_participants_call_user_idx').on(table.callId, table.userId),
+    index('call_participants_user_idx').on(table.userId),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   roomsCreated: many(rooms),
   memberships: many(roomMembers),
@@ -250,3 +294,7 @@ export type PasskeyCredential = typeof passkeyCredentials.$inferSelect;
 export type QrLoginSession = typeof qrLoginSessions.$inferSelect;
 export type Friendship = typeof friendships.$inferSelect;
 export type NewFriendship = typeof friendships.$inferInsert;
+export type Call = typeof calls.$inferSelect;
+export type NewCall = typeof calls.$inferInsert;
+export type CallParticipant = typeof callParticipants.$inferSelect;
+export type NewCallParticipant = typeof callParticipants.$inferInsert;

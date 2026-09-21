@@ -1,0 +1,333 @@
+'use client';
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { useMutation, useSubscription } from '@apollo/client';
+import {
+  CALL_SIGNAL_SUBSCRIPTION,
+  CALL_UPDATED_SUBSCRIPTION,
+  END_CALL,
+  JOIN_CALL,
+  LEAVE_CALL,
+  SEND_CALL_SIGNAL,
+  START_CALL,
+  UPDATE_CALL_MEDIA,
+} from '@/lib/graphql/calls';
+import { MeshCallSession } from '@/lib/webrtc-call';
+import {
+  describePermissionError,
+  requestCallMedia,
+  stopMediaStream,
+} from '@/lib/media-permissions';
+import { CallOverlay } from '@/components/CallOverlay';
+import { IncomingCallBanner } from '@/components/IncomingCallBanner';
+
+export type CallGql = {
+  id: number;
+  roomId: number;
+  createdById: number;
+  mediaType: 'audio' | 'video';
+  status: 'ringing' | 'active' | 'ended';
+  maxParticipants: number;
+  targetUserIds?: number[] | null;
+  participants?: Array<{
+    userId: number;
+    muted: boolean;
+    cameraOff: boolean;
+    user?: {
+      id: number;
+      username: string;
+      displayName?: string | null;
+      avatarUrl?: string | null;
+    } | null;
+  }>;
+};
+
+type CallContextValue = {
+  activeCall: CallGql | null;
+  incomingCall: CallGql | null;
+  localStream: MediaStream | null;
+  remoteStreams: Record<number, MediaStream>;
+  muted: boolean;
+  cameraOff: boolean;
+  error: string | null;
+  startCall: (roomId: number, mediaType: 'audio' | 'video') => Promise<void>;
+  acceptCall: () => Promise<void>;
+  declineCall: () => Promise<void>;
+  hangUp: () => Promise<void>;
+  toggleMute: () => Promise<void>;
+  toggleCamera: () => Promise<void>;
+};
+
+const CallContext = createContext<CallContextValue | null>(null);
+
+export function useCall(): CallContextValue {
+  const ctx = useContext(CallContext);
+  if (!ctx) {
+    throw new Error('useCall must be used within CallProvider');
+  }
+  return ctx;
+}
+
+export function useCallOptional(): CallContextValue | null {
+  return useContext(CallContext);
+}
+
+type Props = {
+  children: ReactNode;
+  currentUserId?: number;
+};
+
+export function CallProvider({ children, currentUserId }: Props) {
+  const [activeCall, setActiveCall] = useState<CallGql | null>(null);
+  const [incomingCall, setIncomingCall] = useState<CallGql | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
+  const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sessionRef = useRef<MeshCallSession | null>(null);
+  const activeCallIdRef = useRef<number | null>(null);
+
+  const [startCallMut] = useMutation(START_CALL);
+  const [joinCallMut] = useMutation(JOIN_CALL);
+  const [leaveCallMut] = useMutation(LEAVE_CALL);
+  const [endCallMut] = useMutation(END_CALL);
+  const [sendSignalMut] = useMutation(SEND_CALL_SIGNAL);
+  const [updateMediaMut] = useMutation(UPDATE_CALL_MEDIA);
+
+  const cleanupSession = useCallback(() => {
+    sessionRef.current?.close();
+    sessionRef.current = null;
+    stopMediaStream(localStream);
+    setLocalStream(null);
+    setRemoteStreams({});
+    activeCallIdRef.current = null;
+  }, [localStream]);
+
+  const attachSession = useCallback(
+    async (call: CallGql, stream: MediaStream) => {
+      if (!currentUserId) return;
+      cleanupSession();
+      activeCallIdRef.current = call.id;
+      setLocalStream(stream);
+      setCameraOff(call.mediaType === 'audio' || stream.getVideoTracks().length === 0);
+
+      const session = new MeshCallSession(currentUserId, {
+        onRemoteStream: (userId, remote) => {
+          setRemoteStreams((prev) => ({ ...prev, [userId]: remote }));
+        },
+        onRemoteStreamRemoved: (userId) => {
+          setRemoteStreams((prev) => {
+            const next = { ...prev };
+            delete next[userId];
+            return next;
+          });
+        },
+        sendSignal: async ({ toUserId, signalType, payload }) => {
+          await sendSignalMut({
+            variables: {
+              input: {
+                callId: call.id,
+                toUserId,
+                signalType,
+                payload,
+              },
+            },
+          });
+        },
+      });
+      sessionRef.current = session;
+      await session.setLocalStream(stream);
+
+      const peerIds = (call.participants ?? [])
+        .map((p) => p.userId)
+        .filter((id) => id !== currentUserId);
+      await session.connectToPeers(peerIds);
+    },
+    [cleanupSession, currentUserId, sendSignalMut],
+  );
+
+  useSubscription(CALL_UPDATED_SUBSCRIPTION, {
+    skip: !currentUserId,
+    onData: ({ data }) => {
+      const call = data.data?.callUpdated as CallGql | undefined;
+      if (!call || !currentUserId) return;
+
+      if (call.status === 'ended') {
+        if (activeCallIdRef.current === call.id) {
+          cleanupSession();
+          setActiveCall(null);
+        }
+        setIncomingCall((prev) => (prev?.id === call.id ? null : prev));
+        return;
+      }
+
+      const inCall = call.participants?.some((p) => p.userId === currentUserId);
+      if (inCall) {
+        setActiveCall(call);
+        setIncomingCall(null);
+        const peers = (call.participants ?? [])
+          .map((p) => p.userId)
+          .filter((id) => id !== currentUserId);
+        void sessionRef.current?.connectToPeers(peers);
+        return;
+      }
+
+      if (
+        call.status === 'ringing' &&
+        call.createdById !== currentUserId &&
+        (call.targetUserIds?.includes(currentUserId) ?? true)
+      ) {
+        setIncomingCall(call);
+      }
+    },
+  });
+
+  useSubscription(CALL_SIGNAL_SUBSCRIPTION, {
+    skip: !activeCall?.id,
+    variables: { callId: activeCall?.id },
+    onData: ({ data }) => {
+      const signal = data.data?.callSignal;
+      if (!signal || !sessionRef.current) return;
+      void sessionRef.current.handleSignal({
+        signalType: signal.signalType,
+        payload: signal.payload,
+        fromUserId: signal.fromUserId,
+        toUserId: signal.toUserId,
+      });
+    },
+  });
+
+  const startCall = useCallback(
+    async (roomId: number, mediaType: 'audio' | 'video') => {
+      if (!currentUserId) return;
+      setError(null);
+      try {
+        const stream = await requestCallMedia(mediaType);
+        const result = await startCallMut({
+          variables: { input: { roomId, mediaType } },
+        });
+        const call = result.data?.startCall as CallGql;
+        setActiveCall(call);
+        await attachSession(call, stream);
+      } catch (err) {
+        setError(describePermissionError(err));
+        throw err;
+      }
+    },
+    [attachSession, currentUserId, startCallMut],
+  );
+
+  const acceptCall = useCallback(async () => {
+    if (!incomingCall) return;
+    setError(null);
+    try {
+      const stream = await requestCallMedia(incomingCall.mediaType);
+      const result = await joinCallMut({ variables: { callId: incomingCall.id } });
+      const call = result.data?.joinCall as CallGql;
+      setIncomingCall(null);
+      setActiveCall(call);
+      await attachSession(call, stream);
+    } catch (err) {
+      setError(describePermissionError(err));
+    }
+  }, [attachSession, incomingCall, joinCallMut]);
+
+  const declineCall = useCallback(async () => {
+    if (!incomingCall) return;
+    setIncomingCall(null);
+  }, [incomingCall]);
+
+  const hangUp = useCallback(async () => {
+    const call = activeCall;
+    cleanupSession();
+    setActiveCall(null);
+    if (!call) return;
+    try {
+      if (call.createdById === currentUserId && call.participants && call.participants.length <= 2) {
+        await endCallMut({ variables: { callId: call.id } });
+      } else {
+        await leaveCallMut({ variables: { callId: call.id } });
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeCall, cleanupSession, currentUserId, endCallMut, leaveCallMut]);
+
+  const toggleMute = useCallback(async () => {
+    const next = !muted;
+    setMuted(next);
+    sessionRef.current?.setMuted(next);
+    if (activeCall) {
+      await updateMediaMut({
+        variables: { input: { callId: activeCall.id, muted: next } },
+      });
+    }
+  }, [activeCall, muted, updateMediaMut]);
+
+  const toggleCamera = useCallback(async () => {
+    const next = !cameraOff;
+    setCameraOff(next);
+    sessionRef.current?.setCameraOff(next);
+    if (activeCall) {
+      await updateMediaMut({
+        variables: { input: { callId: activeCall.id, cameraOff: next } },
+      });
+    }
+  }, [activeCall, cameraOff, updateMediaMut]);
+
+  useEffect(() => {
+    return () => cleanupSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      activeCall,
+      incomingCall,
+      localStream,
+      remoteStreams,
+      muted,
+      cameraOff,
+      error,
+      startCall,
+      acceptCall,
+      declineCall,
+      hangUp,
+      toggleMute,
+      toggleCamera,
+    }),
+    [
+      activeCall,
+      incomingCall,
+      localStream,
+      remoteStreams,
+      muted,
+      cameraOff,
+      error,
+      startCall,
+      acceptCall,
+      declineCall,
+      hangUp,
+      toggleMute,
+      toggleCamera,
+    ],
+  );
+
+  return (
+    <CallContext.Provider value={value}>
+      {children}
+      {incomingCall ? <IncomingCallBanner /> : null}
+      {activeCall ? <CallOverlay /> : null}
+    </CallContext.Provider>
+  );
+}

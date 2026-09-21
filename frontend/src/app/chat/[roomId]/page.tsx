@@ -9,6 +9,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { AppShell } from '@/components/AppShell';
 import { MobileMenuButton } from '@/components/MobileMenuButton';
+import { CallButtons } from '@/components/CallButtons';
 import {
   ME_QUERY,
   MY_DIRECT_MESSAGES_QUERY,
@@ -104,6 +105,7 @@ export default function ChatRoomPage() {
           </div>
           <GlobalSearch className="mx-1 hidden min-w-0 flex-1 md:block" />
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+            <CallButtons roomId={roomId} isDm={isDm} />
             <GlobalSearch className="md:hidden" compact />
             {publicPath ? (
               <Button

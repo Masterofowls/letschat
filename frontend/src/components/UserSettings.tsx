@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserAvatar } from '@/components/UserAvatar';
 import { SecuritySettingsPanel } from '@/components/SecuritySettings';
+import { MediaDiagnostics } from '@/components/MediaDiagnostics';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -137,6 +138,9 @@ export function UserSettings({ open, onClose }: Props) {
             </TabsTrigger>
             <TabsTrigger value="security" className="w-full justify-start">
               Security
+            </TabsTrigger>
+            <TabsTrigger value="devices" className="w-full justify-start">
+              Devices
             </TabsTrigger>
           </TabsList>
 
@@ -271,6 +275,16 @@ export function UserSettings({ open, onClose }: Props) {
 
             <TabsContent value="security" className="m-0">
               <SecuritySettingsPanel />
+            </TabsContent>
+
+            <TabsContent value="devices" className="m-0 space-y-4">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Devices & permissions</h2>
+                <p className="text-sm text-muted-foreground">
+                  Check microphone/camera access for 1:1 and group calls (max 4).
+                </p>
+              </div>
+              <MediaDiagnostics />
             </TabsContent>
 
             {(message || error) && (

@@ -123,6 +123,35 @@ export async function setupAdmin(app: INestApplication): Promise<void> {
         }),
       },
       {
+        resource: db.table('calls'),
+        options: resourceOptions({
+          listProperties: [
+            'id',
+            'room_id',
+            'created_by_id',
+            'media_type',
+            'status',
+            'max_participants',
+            'created_at',
+            'ended_at',
+          ],
+        }),
+      },
+      {
+        resource: db.table('call_participants'),
+        options: resourceOptions({
+          listProperties: [
+            'id',
+            'call_id',
+            'user_id',
+            'muted',
+            'camera_off',
+            'joined_at',
+            'left_at',
+          ],
+        }),
+      },
+      {
         resource: db.table('passkey_credentials'),
         options: resourceOptions({
           properties: {

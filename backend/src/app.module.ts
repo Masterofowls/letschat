@@ -12,6 +12,7 @@ import { RoomsModule } from './rooms/rooms.module';
 import { MessagesModule } from './messages/messages.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { FriendsModule } from './friends/friends.module';
+import { CallsModule } from './calls/calls.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -89,6 +90,7 @@ import { HealthController } from './health.controller';
     MessagesModule,
     NotificationsModule,
     FriendsModule,
+    CallsModule,
   ],
 })
 export class AppModule {}
