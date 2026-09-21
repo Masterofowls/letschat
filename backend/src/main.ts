@@ -29,13 +29,18 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  await setupAdmin(app);
+  try {
+    await setupAdmin(app);
+    logger.log(`AdminJS panel listening on http://0.0.0.0:${Number(process.env.PORT) || 9000}/admin`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`AdminJS skipped: ${message}`);
+  }
 
   // Render requires binding to 0.0.0.0 and process.env.PORT
   const port = Number(process.env.PORT) || 9000;
   await app.listen(port, '0.0.0.0');
   logger.log(`GraphQL API listening on http://0.0.0.0:${port}/graphql`);
-  logger.log(`AdminJS panel listening on http://0.0.0.0:${port}/admin`);
 }
 
 bootstrap().catch((error: unknown) => {

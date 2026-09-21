@@ -4,6 +4,7 @@
   "description": "NestJS GraphQL chat API with Drizzle and real-time subscriptions",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/patch-adminjs-sql.mjs",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",

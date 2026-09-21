@@ -47,10 +47,15 @@ export async function setupAdmin(app: INestApplication): Promise<void> {
 
   const connectionString = requireEnv('DATABASE_URL');
   const databaseName = process.env.ADMIN_DATABASE_NAME || databaseNameFromUrl(connectionString);
+  const relaxSsl =
+    process.env.DATABASE_SSL === 'relax' ||
+    (process.env.DATABASE_SSL !== 'strict' && /supabase\.com/i.test(connectionString));
 
   const db = await new Adapter('postgresql', {
     connectionString,
     database: databaseName,
+    schema: process.env.ADMIN_SCHEMA || 'public',
+    ...(relaxSsl ? { ssl: { rejectUnauthorized: false } } : {}),
   }).init();
 
   const adminEmail = process.env.ADMIN_EMAIL || 'admin';

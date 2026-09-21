@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PubSub } from 'graphql-subscriptions';
 import { PostgresPubSub } from 'graphql-pg-subscriptions';
 import { Client } from 'pg';
+import { createPgPoolConfig } from '../database/pg-pool-options';
 
 export const PUB_SUB = 'PUB_SUB';
 
@@ -18,7 +19,7 @@ export const PUB_SUB = 'PUB_SUB';
 
         if (usePgPubSub && databaseUrl) {
           // Multi-instance production: PostgreSQL LISTEN/NOTIFY
-          const client = new Client({ connectionString: databaseUrl });
+          const client = new Client(createPgPoolConfig(databaseUrl));
           await client.connect();
           return new PostgresPubSub({ client });
         }
