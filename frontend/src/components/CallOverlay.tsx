@@ -7,45 +7,72 @@ import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
 
+function iceLabel(state?: RTCIceConnectionState): string {
+  if (!state || state === 'new' || state === 'checking') return 'Connecting media…';
+  if (state === 'connected' || state === 'completed') return 'Connected';
+  if (state === 'disconnected') return 'Reconnecting…';
+  if (state === 'failed') return 'Media failed — retrying…';
+  return state;
+}
+
 function RemoteTile({
   stream,
   label,
   avatarUrl,
+  iceState,
 }: {
   stream?: MediaStream;
   label: string;
   avatarUrl?: string | null;
+  iceState?: RTCIceConnectionState;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    el.srcObject = stream ?? null;
-    void el.play().catch(() => {
-      // Autoplay can fail until a user gesture; call UI already followed one.
-    });
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    const audioTracks = stream?.getAudioTracks() ?? [];
+    const videoTracks = stream?.getVideoTracks() ?? [];
+    if (video) {
+      video.srcObject = videoTracks.length ? new MediaStream(videoTracks) : null;
+      void video.play().catch(() => undefined);
+    }
+    if (audio) {
+      // Separate audio element avoids autoplay blocks when video is hidden.
+      audio.srcObject = audioTracks.length ? new MediaStream(audioTracks) : null;
+      void audio.play().catch(() => undefined);
+    }
     return () => {
-      el.srcObject = null;
+      if (video) video.srcObject = null;
+      if (audio) audio.srcObject = null;
     };
   }, [stream]);
 
   const hasVideo = Boolean(
-    stream?.getVideoTracks().some((t) => t.readyState === 'live' && t.enabled),
+    stream?.getVideoTracks().some((t) => t.readyState === 'live' && t.enabled && !t.muted),
   );
+  const mediaReady = iceState === 'connected' || iceState === 'completed';
 
   return (
     <div className="relative flex aspect-video min-h-[140px] items-center justify-center overflow-hidden rounded-xl bg-[#1e1f22]">
+      {/* Dedicated audio element — survives when video is hidden / autoplay quirks */}
+      <audio ref={audioRef} autoPlay playsInline />
       <video
         ref={videoRef}
         autoPlay
         playsInline
         className={cn(
           'h-full w-full object-cover',
-          hasVideo ? 'opacity-100' : 'pointer-events-none absolute opacity-0',
+          hasVideo && mediaReady ? 'opacity-100' : 'pointer-events-none absolute opacity-0',
         )}
       />
-      {!hasVideo ? <UserAvatar name={label} avatarUrl={avatarUrl} size="xl" /> : null}
+      {!hasVideo || !mediaReady ? (
+        <div className="flex flex-col items-center gap-2 px-3 text-center">
+          <UserAvatar name={label} avatarUrl={avatarUrl} size="xl" />
+          <p className="text-xs text-muted-foreground">{iceLabel(iceState)}</p>
+        </div>
+      ) : null}
       <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
         {label}
       </span>
@@ -58,6 +85,7 @@ export function CallOverlay() {
     activeCall,
     localStream,
     remoteStreams,
+    peerIceStates,
     muted,
     cameraOff,
     error,
@@ -80,7 +108,16 @@ export function CallOverlay() {
   if (!activeCall) return null;
 
   const remotes = Object.entries(remoteStreams);
+  const iceValues = Object.values(peerIceStates);
+  const anyMediaUp = iceValues.some((s) => s === 'connected' || s === 'completed');
+  const anyChecking = iceValues.some((s) => s === 'checking' || s === 'new');
   const gridCols = remotes.length <= 1 ? 'grid-cols-1' : 'grid-cols-2';
+
+  let statusText = 'Waiting for others…';
+  if (activeCall.status === 'ringing' && remotes.length === 0) statusText = 'Ringing…';
+  else if (anyMediaUp) statusText = 'Connected';
+  else if (remotes.length > 0 || anyChecking) statusText = 'Connecting media…';
+  else if (activeCall.status === 'active') statusText = 'Connecting…';
 
   return (
     <div className="fixed inset-0 z-[65] flex flex-col bg-[#111214] safe-pt safe-pb">
@@ -89,15 +126,7 @@ export function CallOverlay() {
           <p className="text-sm font-semibold text-white">
             {activeCall.mediaType === 'video' ? 'Video call' : 'Audio call'}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {activeCall.status === 'ringing'
-              ? remotes.length
-                ? 'Connecting…'
-                : 'Ringing…'
-              : remotes.length
-                ? 'Connected'
-                : 'Waiting for others…'}
-          </p>
+          <p className="text-xs text-muted-foreground">{statusText}</p>
         </div>
       </header>
 
@@ -137,6 +166,7 @@ export function CallOverlay() {
               stream={stream}
               label={label}
               avatarUrl={participant?.user?.avatarUrl}
+              iceState={peerIceStates[Number(userId)]}
             />
           );
         })}

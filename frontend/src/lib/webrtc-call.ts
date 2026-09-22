@@ -1,7 +1,6 @@
-export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-];
+import { resolveIceServers } from './ice-servers';
+
+export { DEFAULT_ICE_SERVERS } from './ice-servers';
 
 export type SignalMessage = {
   signalType: 'offer' | 'answer' | 'ice';
@@ -14,6 +13,7 @@ export type MeshCallCallbacks = {
   onRemoteStream: (userId: number, stream: MediaStream) => void;
   onRemoteStreamRemoved: (userId: number) => void;
   onConnectionState?: (userId: number, state: RTCPeerConnectionState) => void;
+  onIceConnectionState?: (userId: number, state: RTCIceConnectionState) => void;
   sendSignal: (msg: {
     toUserId: number;
     signalType: 'offer' | 'answer' | 'ice';
@@ -22,13 +22,13 @@ export type MeshCallCallbacks = {
 };
 
 type ConnectOptions = {
-  /** Joiner should initiate offers; existing peers must wait for offers. */
+  /** Only one side should initiate per pair to avoid glare / one-way media. */
   initiate?: boolean;
 };
 
 /**
- * Mesh WebRTC: only the joining peer creates offers to existing participants.
- * Existing peers answer — avoids glare when both sides call connectToPeers.
+ * Mesh WebRTC: existing peers (or a single designated initiator) create offers.
+ * Answers + trickle ICE; local MediaStream is always attached as sendrecv.
  */
 export class MeshCallSession {
   private readonly peers = new Map<number, RTCPeerConnection>();
@@ -37,36 +37,38 @@ export class MeshCallSession {
   private readonly pendingIce = new Map<number, RTCIceCandidateInit[]>();
   private readonly remoteStreams = new Map<number, MediaStream>();
   private localStream: MediaStream | null = null;
+  private closed = false;
 
   constructor(
     private readonly selfUserId: number,
     private readonly callbacks: MeshCallCallbacks,
-    private readonly iceServers: RTCIceServer[] = DEFAULT_ICE_SERVERS,
+    private readonly iceServers: RTCIceServer[] = resolveIceServers(),
   ) {}
 
   getLocalStream(): MediaStream | null {
     return this.localStream;
   }
 
+  getIceConnectionState(userId: number): RTCIceConnectionState | null {
+    return this.peers.get(userId)?.iceConnectionState ?? null;
+  }
+
   async setLocalStream(stream: MediaStream): Promise<void> {
     this.localStream = stream;
     for (const pc of this.peers.values()) {
-      const senders = pc.getSenders();
-      for (const track of stream.getTracks()) {
-        const sender = senders.find((s) => s.track?.kind === track.kind);
-        if (sender) await sender.replaceTrack(track);
-        else pc.addTrack(track, stream);
-      }
+      await this.attachLocalTracks(pc, stream);
     }
   }
 
   async connectToPeers(peerIds: number[], options: ConnectOptions = {}): Promise<void> {
+    if (this.closed) return;
     const initiate = options.initiate ?? false;
     const others = peerIds.filter((id) => id !== this.selfUserId);
     await Promise.all(others.map((id) => this.ensurePeer(id, initiate)));
   }
 
   async handleSignal(signal: SignalMessage): Promise<void> {
+    if (this.closed) return;
     if (signal.fromUserId === this.selfUserId) return;
     const pc = await this.ensurePeer(signal.fromUserId, false);
     const data = JSON.parse(signal.payload) as
@@ -74,7 +76,8 @@ export class MeshCallSession {
       | RTCIceCandidateInit;
 
     if (signal.signalType === 'offer') {
-      const readyForOffer = !this.makingOffer.get(signal.fromUserId) && pc.signalingState === 'stable';
+      const readyForOffer =
+        !this.makingOffer.get(signal.fromUserId) && pc.signalingState === 'stable';
       const offerCollision = !readyForOffer;
       const polite = this.selfUserId > signal.fromUserId;
       this.ignoreOffer.set(signal.fromUserId, !polite && offerCollision);
@@ -90,6 +93,9 @@ export class MeshCallSession {
 
       await pc.setRemoteDescription(data as RTCSessionDescriptionInit);
       await this.flushIce(signal.fromUserId, pc);
+      if (this.localStream) {
+        await this.attachLocalTracks(pc, this.localStream);
+      }
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await this.callbacks.sendSignal({
@@ -137,6 +143,10 @@ export class MeshCallSession {
   removePeer(userId: number): void {
     const pc = this.peers.get(userId);
     if (!pc) return;
+    pc.onicecandidate = null;
+    pc.ontrack = null;
+    pc.onconnectionstatechange = null;
+    pc.oniceconnectionstatechange = null;
     pc.close();
     this.peers.delete(userId);
     this.makingOffer.delete(userId);
@@ -147,10 +157,10 @@ export class MeshCallSession {
   }
 
   close(): void {
+    this.closed = true;
     for (const userId of [...this.peers.keys()]) {
       this.removePeer(userId);
     }
-    // Do not stop local tracks here — caller owns the MediaStream lifecycle.
     this.localStream = null;
   }
 
@@ -166,26 +176,75 @@ export class MeshCallSession {
     }
   }
 
+  private async attachLocalTracks(pc: RTCPeerConnection, stream: MediaStream): Promise<void> {
+    const senders = pc.getSenders();
+    for (const track of stream.getTracks()) {
+      const sender = senders.find((s) => s.track?.kind === track.kind);
+      if (sender) {
+        if (sender.track?.id !== track.id) {
+          await sender.replaceTrack(track);
+        }
+      } else {
+        pc.addTrack(track, stream);
+      }
+    }
+    for (const transceiver of pc.getTransceivers()) {
+      if (transceiver.sender.track) {
+        try {
+          transceiver.direction = 'sendrecv';
+        } catch {
+          // direction may be immutable after negotiation in some browsers
+        }
+      }
+    }
+  }
+
+  private notifyRemote(userId: number, track: MediaStreamTrack): void {
+    let stream = this.remoteStreams.get(userId);
+    if (!stream) {
+      stream = new MediaStream();
+      this.remoteStreams.set(userId, stream);
+    }
+    if (!stream.getTracks().some((t) => t.id === track.id)) {
+      stream.addTrack(track);
+    }
+    const snapshot = new MediaStream(stream.getTracks());
+    this.remoteStreams.set(userId, snapshot);
+    this.callbacks.onRemoteStream(userId, snapshot);
+
+    const bump = () => {
+      const current = this.remoteStreams.get(userId);
+      if (!current) return;
+      const next = new MediaStream(current.getTracks());
+      this.remoteStreams.set(userId, next);
+      this.callbacks.onRemoteStream(userId, next);
+    };
+    if (typeof track.addEventListener === 'function') {
+      track.addEventListener('unmute', bump);
+      track.addEventListener('mute', bump);
+    }
+  }
+
   private async ensurePeer(userId: number, createOffer: boolean): Promise<RTCPeerConnection> {
     const existing = this.peers.get(userId);
     if (existing) {
+      if (this.localStream) {
+        await this.attachLocalTracks(existing, this.localStream);
+      }
       if (createOffer && existing.signalingState === 'stable') {
         await this.makeOffer(userId, existing);
       }
       return existing;
     }
 
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
+    const pc = new RTCPeerConnection({
+      iceServers: this.iceServers,
+      iceCandidatePoolSize: 4,
+    });
     this.peers.set(userId, pc);
 
     if (this.localStream) {
-      for (const track of this.localStream.getTracks()) {
-        pc.addTrack(track, this.localStream);
-      }
-    } else {
-      // Ensure recv transceivers exist even before local media is attached.
-      pc.addTransceiver('audio', { direction: 'recvonly' });
-      pc.addTransceiver('video', { direction: 'recvonly' });
+      await this.attachLocalTracks(pc, this.localStream);
     }
 
     pc.onicecandidate = (event) => {
@@ -198,23 +257,22 @@ export class MeshCallSession {
     };
 
     pc.ontrack = (event) => {
-      let stream = this.remoteStreams.get(userId);
-      if (!stream) {
-        stream = event.streams[0] ? event.streams[0] : new MediaStream();
-        this.remoteStreams.set(userId, stream);
+      this.notifyRemote(userId, event.track);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      this.callbacks.onIceConnectionState?.(userId, pc.iceConnectionState);
+      if (pc.iceConnectionState === 'failed') {
+        void this.restartIce(userId, pc);
       }
-      if (!stream.getTracks().some((t) => t.id === event.track.id)) {
-        stream.addTrack(event.track);
-      }
-      // Clone reference bump so React sees an update when tracks are added.
-      const notified = new MediaStream(stream.getTracks());
-      this.remoteStreams.set(userId, notified);
-      this.callbacks.onRemoteStream(userId, notified);
     };
 
     pc.onconnectionstatechange = () => {
       this.callbacks.onConnectionState?.(userId, pc.connectionState);
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      if (pc.connectionState === 'failed') {
+        void this.restartIce(userId, pc);
+      }
+      if (pc.connectionState === 'closed') {
         this.removePeer(userId);
       }
     };
@@ -225,10 +283,35 @@ export class MeshCallSession {
     return pc;
   }
 
+  private async restartIce(userId: number, pc: RTCPeerConnection): Promise<void> {
+    if (this.closed || pc.signalingState !== 'stable') return;
+    try {
+      this.makingOffer.set(userId, true);
+      const offer = await pc.createOffer({ iceRestart: true });
+      if (pc.signalingState !== 'stable') return;
+      await pc.setLocalDescription(offer);
+      await this.callbacks.sendSignal({
+        toUserId: userId,
+        signalType: 'offer',
+        payload: JSON.stringify(pc.localDescription),
+      });
+    } catch {
+      // ignore
+    } finally {
+      this.makingOffer.set(userId, false);
+    }
+  }
+
   private async makeOffer(userId: number, pc: RTCPeerConnection): Promise<void> {
     try {
       this.makingOffer.set(userId, true);
-      const offer = await pc.createOffer();
+      if (this.localStream) {
+        await this.attachLocalTracks(pc, this.localStream);
+      }
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
       if (pc.signalingState !== 'stable') return;
       await pc.setLocalDescription(offer);
       await this.callbacks.sendSignal({

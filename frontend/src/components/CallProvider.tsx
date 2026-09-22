@@ -61,6 +61,7 @@ type CallContextValue = {
   incomingCall: CallGql | null;
   localStream: MediaStream | null;
   remoteStreams: Record<number, MediaStream>;
+  peerIceStates: Record<number, RTCIceConnectionState>;
   muted: boolean;
   cameraOff: boolean;
   error: string | null;
@@ -82,7 +83,7 @@ type PendingSignal = {
 const CallContext = createContext<CallContextValue | null>(null);
 
 /** Delay so graphql-ws subscription is live before first offer/answer exchange. */
-export const SIGNAL_SUBSCRIBE_GRACE_MS = 350;
+export const SIGNAL_SUBSCRIBE_GRACE_MS = 500;
 
 export function useCall(): CallContextValue {
   const ctx = useContext(CallContext);
@@ -106,6 +107,7 @@ export function CallProvider({ children, currentUserId }: Props) {
   const [incomingCall, setIncomingCall] = useState<CallGql | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
+  const [peerIceStates, setPeerIceStates] = useState<Record<number, RTCIceConnectionState>>({});
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +146,7 @@ export function CallProvider({ children, currentUserId }: Props) {
       setLocalStream(null);
     }
     setRemoteStreams({});
+    setPeerIceStates({});
     activeCallIdRef.current = null;
     setSignalCallId(null);
   }, []);
@@ -154,6 +157,7 @@ export function CallProvider({ children, currentUserId }: Props) {
       sessionRef.current?.close();
       sessionRef.current = null;
       connectedPeersRef.current = new Set();
+      setPeerIceStates({});
       if (localStreamRef.current && localStreamRef.current !== stream) {
         stopMediaStream(localStreamRef.current);
       }
@@ -177,6 +181,14 @@ export function CallProvider({ children, currentUserId }: Props) {
             delete next[userId];
             return next;
           });
+          setPeerIceStates((prev) => {
+            const next = { ...prev };
+            delete next[userId];
+            return next;
+          });
+        },
+        onIceConnectionState: (userId, state) => {
+          setPeerIceStates((prev) => ({ ...prev, [userId]: state }));
         },
         sendSignal: async ({ toUserId, signalType, payload }) => {
           await sendSignalMut({
@@ -316,8 +328,8 @@ export function CallProvider({ children, currentUserId }: Props) {
       const call = normalizeCallPayload(result.data?.joinCall as CallGql);
       setIncomingCall(null);
       setActiveCall(call);
-      // Joiner also offers after grace — glare is handled by polite peer logic.
-      await attachSession(call, stream, true);
+      // Joiner only answers — existing peer initiates to avoid glare/one-way media.
+      await attachSession(call, stream, false);
     } catch (err) {
       stopMediaStream(stream);
       setError(describePermissionError(err));
@@ -392,6 +404,7 @@ export function CallProvider({ children, currentUserId }: Props) {
       incomingCall,
       localStream,
       remoteStreams,
+      peerIceStates,
       muted,
       cameraOff,
       error,
@@ -407,6 +420,7 @@ export function CallProvider({ children, currentUserId }: Props) {
       incomingCall,
       localStream,
       remoteStreams,
+      peerIceStates,
       muted,
       cameraOff,
       error,
