@@ -10,25 +10,24 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useMutation, useQuery, useSubscription } from '@apollo/client';
+import { useApolloClient, useMutation, useQuery, useSubscription } from '@apollo/client';
+import {
+  Call as StreamCallObj,
+  StreamVideoClient,
+  type User as StreamUser,
+} from '@stream-io/video-react-sdk';
 import { ME_QUERY } from '@/lib/graphql/queries';
 import { CALLS_ENABLED } from '@/lib/feature-flags';
 import {
-  CALL_SIGNAL_SUBSCRIPTION,
   CALL_UPDATED_SUBSCRIPTION,
   END_CALL,
   JOIN_CALL,
   LEAVE_CALL,
-  SEND_CALL_SIGNAL,
   START_CALL,
+  STREAM_VIDEO_AUTH,
   UPDATE_CALL_MEDIA,
 } from '@/lib/graphql/calls';
-import { PeerJsCallSession } from '@/lib/peerjs-call';
-import {
-  describePermissionError,
-  requestCallMedia,
-  stopMediaStream,
-} from '@/lib/media-permissions';
+import { describePermissionError } from '@/lib/media-permissions';
 import { CallOverlay } from '@/components/CallOverlay';
 import { IncomingCallBanner } from '@/components/IncomingCallBanner';
 import {
@@ -44,6 +43,7 @@ export type CallGql = {
   mediaType: 'audio' | 'video';
   status: 'ringing' | 'active' | 'ended';
   maxParticipants: number;
+  streamCallId?: string;
   targetUserIds?: number[] | null;
   participants?: Array<{
     userId: number;
@@ -61,9 +61,8 @@ export type CallGql = {
 type CallContextValue = {
   activeCall: CallGql | null;
   incomingCall: CallGql | null;
-  localStream: MediaStream | null;
-  remoteStreams: Record<number, MediaStream>;
-  peerIceStates: Record<number, RTCIceConnectionState>;
+  streamClient: StreamVideoClient | null;
+  streamCall: StreamCallObj | null;
   muted: boolean;
   cameraOff: boolean;
   error: string | null;
@@ -75,17 +74,7 @@ type CallContextValue = {
   toggleCamera: () => Promise<void>;
 };
 
-type PendingSignal = {
-  signalType: string;
-  payload: string;
-  fromUserId: number;
-  toUserId?: number | null;
-};
-
 const CallContext = createContext<CallContextValue | null>(null);
-
-/** Wait for callSignal subscription before broadcasting peer-id (tutorial join-room). */
-export const SIGNAL_SUBSCRIBE_GRACE_MS = 400;
 
 export function useCall(): CallContextValue {
   const ctx = useContext(CallContext);
@@ -104,145 +93,158 @@ type Props = {
   currentUserId?: number;
 };
 
-/** Wraps app when CALLS_ENABLED; resolves user id for signaling if not passed. */
+/** Wraps app when CALLS_ENABLED; GetStream handles media, GraphQL owns lifecycle. */
 export function CallProvider({ children, currentUserId: currentUserIdProp }: Props) {
   const meQuery = useQuery(ME_QUERY, { skip: currentUserIdProp != null });
   const currentUserId = currentUserIdProp ?? meQuery.data?.me?.id;
+  const me = meQuery.data?.me;
 
   if (!CALLS_ENABLED) {
     return <>{children}</>;
   }
 
   return (
-    <CallProviderActive currentUserId={currentUserId}>{children}</CallProviderActive>
+    <CallProviderActive currentUserId={currentUserId} me={me}>
+      {children}
+    </CallProviderActive>
   );
 }
 
 function CallProviderActive({
   children,
   currentUserId,
+  me,
 }: {
   children: ReactNode;
   currentUserId?: number;
+  me?: {
+    id: number;
+    username?: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  };
 }) {
+  const apollo = useApolloClient();
   const [activeCall, setActiveCall] = useState<CallGql | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallGql | null>(null);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
-  const [peerIceStates, setPeerIceStates] = useState<Record<number, RTCIceConnectionState>>({});
+  const [streamCall, setStreamCall] = useState<StreamCallObj | null>(null);
+  const [streamClient, setStreamClient] = useState<StreamVideoClient | null>(null);
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [signalCallId, setSignalCallId] = useState<number | null>(null);
-  const sessionRef = useRef<PeerJsCallSession | null>(null);
+  const clientRef = useRef<StreamVideoClient | null>(null);
+  const streamCallRef = useRef<StreamCallObj | null>(null);
   const activeCallIdRef = useRef<number | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const signalQueueRef = useRef<PendingSignal[]>([]);
 
   const [startCallMut] = useMutation(START_CALL);
   const [joinCallMut] = useMutation(JOIN_CALL);
   const [leaveCallMut] = useMutation(LEAVE_CALL);
   const [endCallMut] = useMutation(END_CALL);
-  const [sendSignalMut] = useMutation(SEND_CALL_SIGNAL);
   const [updateMediaMut] = useMutation(UPDATE_CALL_MEDIA);
 
-  const flushSignalQueue = useCallback(async () => {
-    const session = sessionRef.current;
-    if (!session) return;
-    const queued = signalQueueRef.current;
-    signalQueueRef.current = [];
-    for (const signal of queued) {
-      await session.handleSignal(signal);
-    }
-  }, []);
-
-  const cleanupSession = useCallback((stopLocal = true) => {
-    sessionRef.current?.close();
-    sessionRef.current = null;
-    signalQueueRef.current = [];
-    if (stopLocal) {
-      stopMediaStream(localStreamRef.current);
-      localStreamRef.current = null;
-      setLocalStream(null);
-    }
-    setRemoteStreams({});
-    setPeerIceStates({});
-    activeCallIdRef.current = null;
-    setSignalCallId(null);
-  }, []);
-
-  const attachSession = useCallback(
-    async (call: CallGql, stream: MediaStream) => {
-      if (!currentUserId) return;
-      sessionRef.current?.close();
-      sessionRef.current = null;
-      setPeerIceStates({});
-      if (localStreamRef.current && localStreamRef.current !== stream) {
-        stopMediaStream(localStreamRef.current);
-      }
-
-      activeCallIdRef.current = call.id;
-      setSignalCallId(call.id);
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      setCameraOff(call.mediaType === 'audio' || stream.getVideoTracks().length === 0);
-      setMuted(false);
-
-      // Let graphql-ws callSignal subscription attach before peer-id broadcast.
-      await new Promise((r) => setTimeout(r, SIGNAL_SUBSCRIBE_GRACE_MS));
-      if (activeCallIdRef.current !== call.id) return;
-
-      const session = new PeerJsCallSession(currentUserId, {
-        onRemoteStream: (userId, remote) => {
-          setRemoteStreams((prev) => ({ ...prev, [userId]: remote }));
-          setPeerIceStates((prev) => ({ ...prev, [userId]: 'connected' }));
-        },
-        onRemoteStreamRemoved: (userId) => {
-          setRemoteStreams((prev) => {
-            const next = { ...prev };
-            delete next[userId];
-            return next;
-          });
-          setPeerIceStates((prev) => {
-            const next = { ...prev };
-            delete next[userId];
-            return next;
-          });
-        },
-        onConnectionState: (userId, state) => {
-          const ice: RTCIceConnectionState =
-            state === 'connected'
-              ? 'connected'
-              : state === 'connecting'
-                ? 'checking'
-                : 'disconnected';
-          setPeerIceStates((prev) => ({ ...prev, [userId]: ice }));
-        },
-        sendPeerId: async (peerId) => {
-          // Tutorial socket.emit('join-room', roomId, peerId) → broadcast user-connected
-          await sendSignalMut({
-            variables: {
-              input: {
-                callId: call.id,
-                signalType: 'peer-id',
-                payload: JSON.stringify({ peerId }),
-              },
-            },
-          });
-        },
-      });
-      sessionRef.current = session;
-
+  const leaveStreamMedia = useCallback(async () => {
+    const call = streamCallRef.current;
+    streamCallRef.current = null;
+    setStreamCall(null);
+    if (call) {
       try {
-        await session.start(stream);
-        await flushSignalQueue();
-      } catch (err) {
-        cleanupSession(false);
-        throw err;
+        await call.leave();
+      } catch {
+        // already left
       }
+    }
+  }, []);
+
+  const disconnectStream = useCallback(async () => {
+    await leaveStreamMedia();
+    const client = clientRef.current;
+    clientRef.current = null;
+    setStreamClient(null);
+    if (client) {
+      try {
+        await client.disconnectUser();
+      } catch {
+        // ignore
+      }
+    }
+  }, [leaveStreamMedia]);
+
+  const ensureStreamClient = useCallback(async (): Promise<StreamVideoClient> => {
+    if (clientRef.current) return clientRef.current;
+    if (!currentUserId) {
+      throw new Error('Not signed in');
+    }
+
+    const { data } = await apollo.query({
+      query: STREAM_VIDEO_AUTH,
+      fetchPolicy: 'network-only',
+    });
+    const auth = data?.streamVideoAuth as {
+      apiKey: string;
+      token: string;
+      userId: string;
+      callType: string;
+    };
+    if (!auth?.apiKey || !auth?.token) {
+      throw new Error('Could not get GetStream credentials');
+    }
+
+    const user: StreamUser = {
+      id: auth.userId,
+      name: me?.displayName || me?.username || `User ${currentUserId}`,
+      image: me?.avatarUrl || undefined,
+    };
+
+    const client = new StreamVideoClient({
+      apiKey: auth.apiKey,
+      user,
+      token: auth.token,
+      tokenProvider: async () => {
+        const refreshed = await apollo.query({
+          query: STREAM_VIDEO_AUTH,
+          fetchPolicy: 'network-only',
+        });
+        return refreshed.data?.streamVideoAuth?.token as string;
+      },
+    });
+    clientRef.current = client;
+    setStreamClient(client);
+    return client;
+  }, [apollo, currentUserId, me?.avatarUrl, me?.displayName, me?.username]);
+
+  const joinStreamMedia = useCallback(
+    async (call: CallGql) => {
+      const client = await ensureStreamClient();
+      await leaveStreamMedia();
+
+      const streamId = call.streamCallId || `letschat-${call.id}`;
+      const { data } = await apollo.query({
+        query: STREAM_VIDEO_AUTH,
+        fetchPolicy: 'cache-first',
+      });
+      const callType = (data?.streamVideoAuth?.callType as string) || 'default';
+      const stream = client.call(callType, streamId);
+
+      if (call.mediaType === 'audio') {
+        await stream.camera.disable();
+      } else {
+        await stream.camera.enable();
+      }
+      await stream.microphone.enable();
+
+      await stream.join({ create: true });
+      streamCallRef.current = stream;
+      setStreamCall(stream);
+      setCameraOff(call.mediaType === 'audio');
+      setMuted(false);
     },
-    [cleanupSession, currentUserId, flushSignalQueue, sendSignalMut],
+    [apollo, ensureStreamClient, leaveStreamMedia],
   );
+
+  const cleanupSession = useCallback(async () => {
+    activeCallIdRef.current = null;
+    await leaveStreamMedia();
+  }, [leaveStreamMedia]);
 
   useSubscription(CALL_UPDATED_SUBSCRIPTION, {
     skip: !currentUserId,
@@ -253,7 +255,7 @@ function CallProviderActive({
 
       if (call.status === 'ended') {
         if (activeCallIdRef.current === call.id || incomingCall?.id === call.id) {
-          cleanupSession(true);
+          void cleanupSession();
           setActiveCall(null);
         }
         setIncomingCall((prev) => (prev?.id === call.id ? null : prev));
@@ -277,59 +279,45 @@ function CallProviderActive({
     },
   });
 
-  useSubscription(CALL_SIGNAL_SUBSCRIPTION, {
-    skip: !signalCallId,
-    variables: { callId: signalCallId },
-    onData: ({ data }) => {
-      const signal = data.data?.callSignal as PendingSignal | undefined;
-      if (!signal) return;
-      if (!sessionRef.current) {
-        signalQueueRef.current.push(signal);
-        return;
-      }
-      void sessionRef.current.handleSignal(signal);
-    },
-  });
-
   const startCall = useCallback(
     async (roomId: number, mediaType: CallMedia) => {
       if (!currentUserId) return;
       setError(null);
-      let stream: MediaStream | null = null;
       try {
-        stream = await requestCallMedia(mediaType);
         const result = await startCallMut({
           variables: {
             input: { roomId, mediaType: toGraphqlCallMediaType(mediaType) },
           },
         });
         const call = normalizeCallPayload(result.data?.startCall as CallGql);
+        activeCallIdRef.current = call.id;
         setActiveCall(call);
-        await attachSession(call, stream);
+        await joinStreamMedia(call);
       } catch (err) {
-        stopMediaStream(stream);
+        await cleanupSession();
+        setActiveCall(null);
         setError(describePermissionError(err));
       }
     },
-    [attachSession, currentUserId, startCallMut],
+    [cleanupSession, currentUserId, joinStreamMedia, startCallMut],
   );
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;
     setError(null);
-    let stream: MediaStream | null = null;
     try {
-      stream = await requestCallMedia(incomingCall.mediaType);
       const result = await joinCallMut({ variables: { callId: incomingCall.id } });
       const call = normalizeCallPayload(result.data?.joinCall as CallGql);
       setIncomingCall(null);
+      activeCallIdRef.current = call.id;
       setActiveCall(call);
-      await attachSession(call, stream);
+      await joinStreamMedia(call);
     } catch (err) {
-      stopMediaStream(stream);
+      await cleanupSession();
+      setActiveCall(null);
       setError(describePermissionError(err));
     }
-  }, [attachSession, incomingCall, joinCallMut]);
+  }, [cleanupSession, incomingCall, joinCallMut, joinStreamMedia]);
 
   const declineCall = useCallback(async () => {
     const call = incomingCall;
@@ -348,7 +336,7 @@ function CallProviderActive({
     const call = activeCall;
     const callId = call?.id ?? activeCallIdRef.current;
     const maxParticipants = call?.maxParticipants ?? 2;
-    cleanupSession(true);
+    await cleanupSession();
     setActiveCall(null);
     if (!callId) return;
     try {
@@ -369,7 +357,11 @@ function CallProviderActive({
   const toggleMute = useCallback(async () => {
     const next = !muted;
     setMuted(next);
-    sessionRef.current?.setMuted(next);
+    const call = streamCallRef.current;
+    if (call) {
+      if (next) await call.microphone.disable();
+      else await call.microphone.enable();
+    }
     if (activeCall) {
       await updateMediaMut({
         variables: { input: { callId: activeCall.id, muted: next } },
@@ -378,9 +370,14 @@ function CallProviderActive({
   }, [activeCall, muted, updateMediaMut]);
 
   const toggleCamera = useCallback(async () => {
+    if (activeCall?.mediaType !== 'video') return;
     const next = !cameraOff;
     setCameraOff(next);
-    sessionRef.current?.setCameraOff(next);
+    const call = streamCallRef.current;
+    if (call) {
+      if (next) await call.camera.disable();
+      else await call.camera.enable();
+    }
     if (activeCall) {
       await updateMediaMut({
         variables: { input: { callId: activeCall.id, cameraOff: next } },
@@ -389,16 +386,17 @@ function CallProviderActive({
   }, [activeCall, cameraOff, updateMediaMut]);
 
   useEffect(() => {
-    return () => cleanupSession(true);
-  }, [cleanupSession]);
+    return () => {
+      void disconnectStream();
+    };
+  }, [disconnectStream]);
 
   const value = useMemo(
     () => ({
       activeCall,
       incomingCall,
-      localStream,
-      remoteStreams,
-      peerIceStates,
+      streamClient,
+      streamCall,
       muted,
       cameraOff,
       error,
@@ -412,9 +410,8 @@ function CallProviderActive({
     [
       activeCall,
       incomingCall,
-      localStream,
-      remoteStreams,
-      peerIceStates,
+      streamClient,
+      streamCall,
       muted,
       cameraOff,
       error,
@@ -437,11 +434,7 @@ function CallProviderActive({
         >
           <p className="font-medium">Call failed</p>
           <p className="mt-1 opacity-90">{error}</p>
-          <button
-            type="button"
-            className="mt-2 text-xs underline"
-            onClick={() => setError(null)}
-          >
+          <button type="button" className="mt-2 text-xs underline" onClick={() => setError(null)}>
             Dismiss
           </button>
         </div>

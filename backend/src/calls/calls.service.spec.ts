@@ -26,12 +26,22 @@ describe('CallsService', () => {
     findById: jest.fn(),
     toUserType: jest.fn((u) => u),
   };
+  const streamVideoService = {
+    isConfigured: jest.fn(() => true),
+    createUserToken: jest.fn(() => ({
+      apiKey: 'k',
+      token: 't',
+      userId: '1',
+      callType: 'default',
+    })),
+  };
   const pubSub = { publish: jest.fn() };
 
   const service = new CallsService(
     callsRepository as never,
     roomsService as never,
     usersService as never,
+    streamVideoService as never,
     pubSub as never,
   );
 

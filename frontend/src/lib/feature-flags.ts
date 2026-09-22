@@ -1,2 +1,2 @@
-/** In-app WebRTC/PeerJS calls. Off until a third-party streaming provider is integrated. */
-export const CALLS_ENABLED = false;
+/** GetStream Video for call media. GraphQL still owns ring / accept / leave. */
+export const CALLS_ENABLED = true;

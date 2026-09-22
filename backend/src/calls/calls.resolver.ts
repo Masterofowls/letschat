@@ -9,7 +9,7 @@ import {
 import { Inject, UseGuards } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { CallsService, CALL_SIGNAL, CALL_UPDATED } from './calls.service';
-import { CallSignalType, CallType } from './call.type';
+import { CallSignalType, CallType, StreamVideoAuthType } from './call.type';
 import {
   SendCallSignalInput,
   StartCallInput,
@@ -27,6 +27,12 @@ export class CallsResolver {
     private readonly callsService: CallsService,
     @Inject(PUB_SUB) private readonly pubSub: PubSub,
   ) {}
+
+  @Query(() => StreamVideoAuthType)
+  @UseGuards(JwtAuthGuard)
+  streamVideoAuth(@CurrentUser() user: User): StreamVideoAuthType {
+    return this.callsService.createStreamVideoAuth(user.id);
+  }
 
   @Query(() => CallType, { nullable: true })
   @UseGuards(JwtAuthGuard)

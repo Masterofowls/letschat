@@ -106,9 +106,16 @@ Apollo Client sends WS keep-alives every 30s so Render’s ~55s idle timeout doe
 
 ## Voice / video calls
 
-In-app calls are **disabled** (`frontend/src/lib/feature-flags.ts`: `CALLS_ENABLED = false`). The UI does not start calls or open call subscriptions; backend `calls` GraphQL remains for a future third-party streaming integration (Daily, LiveKit, etc.).
+Calls use **GetStream Video** for media only. Ringing, accept, leave, end, chat, and
+notifications stay on our Nest GraphQL + database (max **4** participants).
 
-To re-enable the legacy PeerJS path temporarily, set `CALLS_ENABLED = true` and redeploy the frontend.
+Server env (never commit secrets):
+
+- `STREAM_API_KEY`
+- `STREAM_API_SECRET`
+- `STREAM_APP_ID` (optional metadata)
+
+Frontend flag: `frontend/src/lib/feature-flags.ts` → `CALLS_ENABLED`.
 
 ## Production tips
 

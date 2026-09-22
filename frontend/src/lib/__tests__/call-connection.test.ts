@@ -1,10 +1,7 @@
-import {
-  SIGNAL_SUBSCRIBE_GRACE_MS,
-} from '../../components/CallProvider';
+import { CALLS_ENABLED } from '../feature-flags';
 
-describe('call connection timing', () => {
-  it('waits for signal subscription before first WebRTC offer', () => {
-    // Prevents "Waiting for opponent" when answers arrive before callSignal is live.
-    expect(SIGNAL_SUBSCRIBE_GRACE_MS).toBeGreaterThanOrEqual(300);
+describe('calls feature flag', () => {
+  it('enables GetStream-backed calls in the UI', () => {
+    expect(CALLS_ENABLED).toBe(true);
   });
 });

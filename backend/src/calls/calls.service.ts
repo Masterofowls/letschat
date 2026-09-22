@@ -16,6 +16,7 @@ import {
   CallSignalType,
   CallStatus,
   CallType,
+  StreamVideoAuthType,
 } from './call.type';
 import {
   SendCallSignalInput,
@@ -23,6 +24,7 @@ import {
   UpdateCallMediaInput,
 } from './calls.dto';
 import { Call, CallParticipant } from '../database/schema';
+import { streamCallIdFor, StreamVideoService } from './stream-video.service';
 
 export const CALL_UPDATED = 'callUpdated';
 export const CALL_SIGNAL = 'callSignal';
@@ -34,8 +36,16 @@ export class CallsService {
     private readonly callsRepository: CallsRepository,
     private readonly roomsService: RoomsService,
     private readonly usersService: UsersService,
+    private readonly streamVideoService: StreamVideoService,
     @Inject(PUB_SUB) private readonly pubSub: PubSub,
   ) {}
+
+  createStreamVideoAuth(userId: number): StreamVideoAuthType {
+    if (!this.streamVideoService.isConfigured()) {
+      throw new BadRequestException('GetStream video is not configured');
+    }
+    return this.streamVideoService.createUserToken(userId);
+  }
 
   async startCall(input: StartCallInput, userId: number): Promise<CallType> {
     await this.roomsService.assertMembership(input.roomId, userId);
@@ -228,6 +238,7 @@ export class CallsService {
       endedAt: call.endedAt,
       participants: participantTypes,
       targetUserIds: targets,
+      streamCallId: streamCallIdFor(call.id),
     };
   }
 

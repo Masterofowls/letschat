@@ -11,7 +11,7 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
 
   // Do NOT mount ExpressPeerServer on this HTTP server — it steals WebSocket
-  // upgrade events from graphql-ws (/graphql). Video calls use 0.peerjs.com.
+  // upgrade events from graphql-ws (/graphql). Call media uses GetStream Video.
 
   const uploadsRoot = join(process.cwd(), 'uploads');
   if (!existsSync(uploadsRoot)) {

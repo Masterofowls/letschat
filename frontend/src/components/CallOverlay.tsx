@@ -1,185 +1,64 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import {
+  CallingState,
+  ParticipantView,
+  StreamCall,
+  StreamTheme,
+  StreamVideo,
+  useCallStateHooks,
+} from '@stream-io/video-react-sdk';
+import '@stream-io/video-react-sdk/dist/css/styles.css';
 import { Mic, MicOff, PhoneOff, Video, VideoOff } from 'lucide-react';
-import { useCall } from '@/components/CallProvider';
+import { useCall as useLetsCall } from '@/components/CallProvider';
 import { Button } from '@/components/ui/button';
-import { UserAvatar } from '@/components/UserAvatar';
 import { cn } from '@/lib/utils';
 
-function iceLabel(state?: RTCIceConnectionState): string {
-  if (!state || state === 'new' || state === 'checking') return 'Connecting media…';
-  if (state === 'connected' || state === 'completed') return 'Connected';
-  if (state === 'disconnected') return 'Reconnecting…';
-  if (state === 'failed') return 'Media failed — retrying…';
-  return state;
-}
-
-function RemoteTile({
-  stream,
-  label,
-  avatarUrl,
-  iceState,
-}: {
-  stream?: MediaStream;
-  label: string;
-  avatarUrl?: string | null;
-  iceState?: RTCIceConnectionState;
-}) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    const audio = audioRef.current;
-    const audioTracks = stream?.getAudioTracks() ?? [];
-    const videoTracks = stream?.getVideoTracks() ?? [];
-
-    const onMeta = () => {
-      void video?.play().catch(() => undefined);
-    };
-
-    if (video) {
-      video.srcObject = videoTracks.length ? new MediaStream(videoTracks) : null;
-      video.addEventListener('loadedmetadata', onMeta);
-      void video.play().catch(() => undefined);
-    }
-    if (audio) {
-      audio.srcObject = audioTracks.length ? new MediaStream(audioTracks) : null;
-      void audio.play().catch(() => undefined);
-    }
-
-    return () => {
-      video?.removeEventListener('loadedmetadata', onMeta);
-      if (video) video.srcObject = null;
-      if (audio) audio.srcObject = null;
-    };
-  }, [stream]);
-
-  const hasVideo = Boolean(
-    stream?.getVideoTracks().some((t) => t.readyState === 'live' && t.enabled && !t.muted),
-  );
-  const mediaReady = iceState === 'connected' || iceState === 'completed';
-
-  return (
-    <div className="relative flex aspect-video min-h-[140px] items-center justify-center overflow-hidden rounded-xl bg-[#1e1f22]">
-      {/* Dedicated audio element — survives when video is hidden / autoplay quirks */}
-      <audio ref={audioRef} autoPlay playsInline />
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className={cn(
-          'h-full w-full object-cover',
-          hasVideo && mediaReady ? 'opacity-100' : 'pointer-events-none absolute opacity-0',
-        )}
-      />
-      {!hasVideo || !mediaReady ? (
-        <div className="flex flex-col items-center gap-2 px-3 text-center">
-          <UserAvatar name={label} avatarUrl={avatarUrl} size="xl" />
-          <p className="text-xs text-muted-foreground">{iceLabel(iceState)}</p>
-        </div>
-      ) : null}
-      <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
-        {label}
-      </span>
-    </div>
-  );
-}
-
-export function CallOverlay() {
-  const {
-    activeCall,
-    localStream,
-    remoteStreams,
-    peerIceStates,
-    muted,
-    cameraOff,
-    error,
-    hangUp,
-    toggleMute,
-    toggleCamera,
-  } = useCall();
-  const localRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const el = localRef.current;
-    if (!el || !localStream) return;
-    el.srcObject = localStream;
-    void el.play().catch(() => undefined);
-    return () => {
-      el.srcObject = null;
-    };
-  }, [localStream]);
+function StreamCallBody() {
+  const { useParticipants, useCallCallingState } = useCallStateHooks();
+  const participants = useParticipants();
+  const callingState = useCallCallingState();
+  const { activeCall, hangUp, muted, cameraOff, toggleMute, toggleCamera } = useLetsCall();
 
   if (!activeCall) return null;
 
-  const remotes = Object.entries(remoteStreams);
-  const iceValues = Object.values(peerIceStates);
-  const anyMediaUp = iceValues.some((s) => s === 'connected' || s === 'completed');
-  const anyChecking = iceValues.some((s) => s === 'checking' || s === 'new');
-  const gridCols = remotes.length <= 1 ? 'grid-cols-1' : 'grid-cols-2';
+  const joined = callingState === CallingState.JOINED;
 
-  let statusText = 'Waiting for others…';
-  if (activeCall.status === 'ringing' && remotes.length === 0) statusText = 'Ringing…';
-  else if (anyMediaUp) statusText = 'Connected';
-  else if (remotes.length > 0 || anyChecking) statusText = 'Connecting media…';
-  else if (activeCall.status === 'active') statusText = 'Connecting…';
+  let statusText = 'Connecting media…';
+  if (activeCall.status === 'ringing' && participants.length <= 1) statusText = 'Ringing…';
+  else if (joined) statusText = 'Connected';
+
+  const gridCols = participants.length <= 1 ? 'grid-cols-1' : 'grid-cols-2';
 
   return (
-    <div className="fixed inset-0 z-[65] flex flex-col bg-[#111214] safe-pt safe-pb">
+    <StreamTheme as="div" className="flex h-full flex-col bg-[#111214] text-white">
       <header className="flex items-center justify-between px-4 py-3">
         <div>
-          <p className="text-sm font-semibold text-white">
+          <p className="text-sm font-semibold">
             {activeCall.mediaType === 'video' ? 'Video call' : 'Audio call'}
           </p>
           <p className="text-xs text-muted-foreground">{statusText}</p>
         </div>
+        <p className="text-xs text-muted-foreground">
+          {participants.length}/{activeCall.maxParticipants}
+        </p>
       </header>
 
       <div className={cn('grid flex-1 gap-2 overflow-y-auto p-3', gridCols)}>
-        <div className="relative flex aspect-video min-h-[140px] items-center justify-center overflow-hidden rounded-xl bg-[#1e1f22]">
-          {!cameraOff && localStream?.getVideoTracks().length ? (
-            <video
-              ref={localRef}
-              autoPlay
-              muted
-              playsInline
-              className="h-full w-full -scale-x-100 object-cover"
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">You</p>
-          )}
-          <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">
-            You{muted ? ' (muted)' : ''}
-          </span>
-        </div>
-
-        {remotes.length === 0 ? (
+        {participants.map((p) => (
+          <div
+            key={p.sessionId}
+            className="relative aspect-video min-h-[140px] overflow-hidden rounded-xl bg-[#1e1f22]"
+          >
+            <ParticipantView participant={p} className="h-full w-full" />
+          </div>
+        ))}
+        {participants.length === 0 ? (
           <div className="flex aspect-video min-h-[140px] items-center justify-center rounded-xl bg-[#1e1f22] text-sm text-muted-foreground">
             Waiting for opponent…
           </div>
         ) : null}
-
-        {remotes.map(([userId, stream]) => {
-          const participant = activeCall.participants?.find((p) => p.userId === Number(userId));
-          const label =
-            participant?.user?.displayName ||
-            participant?.user?.username ||
-            `User ${userId}`;
-          return (
-            <RemoteTile
-              key={userId}
-              stream={stream}
-              label={label}
-              avatarUrl={participant?.user?.avatarUrl}
-              iceState={peerIceStates[Number(userId)]}
-            />
-          );
-        })}
       </div>
-
-      {error ? <p className="px-4 pb-2 text-center text-sm text-destructive">{error}</p> : null}
 
       <div className="flex items-center justify-center gap-3 px-4 py-4">
         <Button
@@ -215,6 +94,34 @@ export function CallOverlay() {
           <PhoneOff className="h-6 w-6" />
         </Button>
       </div>
+    </StreamTheme>
+  );
+}
+
+export function CallOverlay() {
+  const { activeCall, streamClient, streamCall, error, hangUp } = useLetsCall();
+
+  if (!activeCall) return null;
+
+  return (
+    <div className="fixed inset-0 z-[65] flex flex-col bg-[#111214] safe-pt safe-pb">
+      {streamClient && streamCall ? (
+        <StreamVideo client={streamClient}>
+          <StreamCall call={streamCall}>
+            <StreamCallBody />
+          </StreamCall>
+        </StreamVideo>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-4">
+          <p className="text-sm text-muted-foreground">
+            {activeCall.status === 'ringing' ? 'Ringing…' : 'Connecting to GetStream…'}
+          </p>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <Button type="button" variant="destructive" onClick={() => void hangUp()}>
+            Cancel
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

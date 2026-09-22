@@ -74,6 +74,25 @@ export class CallType {
   /** Users who should receive the ring (room members except starter). */
   @Field(() => [Int], { nullable: true })
   targetUserIds?: number[];
+
+  /** GetStream call id (`letschat-{id}`) — media only; lifecycle stays in our DB. */
+  @Field()
+  streamCallId!: string;
+}
+
+@ObjectType()
+export class StreamVideoAuthType {
+  @Field()
+  apiKey!: string;
+
+  @Field()
+  token!: string;
+
+  @Field()
+  userId!: string;
+
+  @Field()
+  callType!: string;
 }
 
 @ObjectType()

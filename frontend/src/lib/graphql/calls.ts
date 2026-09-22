@@ -10,6 +10,7 @@ export const CALL_FIELDS = `
   createdAt
   endedAt
   targetUserIds
+  streamCallId
   participants {
     id
     callId
@@ -23,6 +24,17 @@ export const CALL_FIELDS = `
       username
       displayName
       avatarUrl
+    }
+  }
+`;
+
+export const STREAM_VIDEO_AUTH = gql`
+  query StreamVideoAuth {
+    streamVideoAuth {
+      apiKey
+      token
+      userId
+      callType
     }
   }
 `;

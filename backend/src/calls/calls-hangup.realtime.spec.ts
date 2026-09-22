@@ -25,12 +25,17 @@ describe('CallsService hangup realtime', () => {
     findById: jest.fn(),
     toUserType: jest.fn((u) => u),
   };
+  const streamVideoService = {
+    isConfigured: jest.fn(() => true),
+    createUserToken: jest.fn(),
+  };
   const pubSub = { publish: jest.fn() };
 
   const service = new CallsService(
     callsRepository as never,
     roomsService as never,
     usersService as never,
+    streamVideoService as never,
     pubSub as never,
   );
 
@@ -78,6 +83,7 @@ describe('CallsService hangup realtime', () => {
 
     expect(result.status).toBe('ended');
     expect(result.targetUserIds).toEqual([2]);
+    expect(result.streamCallId).toBe('letschat-10');
     expect(result.participants?.map((p) => p.userId).sort()).toEqual([1, 2]);
     expect(pubSub.publish).toHaveBeenCalledWith(
       'callUpdated',
