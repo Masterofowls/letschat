@@ -1,8 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { ExpressPeerServer } from 'peer';
-import type { Express, RequestHandler } from 'express';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
@@ -11,18 +9,9 @@ import { setupAdmin } from './admin/setup-admin';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const logger = new Logger('Bootstrap');
-  const expressApp = app.getHttpAdapter().getInstance() as Express;
 
-  // PeerJS must be registered BEFORE Nest routes/404, otherwise GET /peerjs/* 404s.
-  // Client path `/peerjs` → `/peerjs/peerjs/id` (path + default key).
-  const peerServer = ExpressPeerServer(app.getHttpServer(), {
-    path: '/peerjs',
-    proxied: true,
-    allow_discovery: true,
-    corsOptions: { origin: true, credentials: true },
-  }) as RequestHandler;
-  expressApp.use(peerServer);
-  logger.log('PeerJS broker registered (GET /peerjs/peerjs/id)');
+  // Do NOT mount ExpressPeerServer on this HTTP server — it steals WebSocket
+  // upgrade events from graphql-ws (/graphql). Video calls use 0.peerjs.com.
 
   const uploadsRoot = join(process.cwd(), 'uploads');
   if (!existsSync(uploadsRoot)) {

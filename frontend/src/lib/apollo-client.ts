@@ -26,9 +26,21 @@ export function setToken(token: string | null): void {
   }
 }
 
+function resolveWsUri(httpUri: string): string {
+  const explicit = process.env.NEXT_PUBLIC_WS_URL;
+  if (explicit) return explicit;
+  try {
+    const url = new URL(httpUri);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return 'ws://localhost:9000/graphql';
+  }
+}
+
 function createApolloClient() {
   const httpUri = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:9000/graphql';
-  const wsUri = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:9000/graphql';
+  const wsUri = resolveWsUri(httpUri);
 
   const httpLink = new HttpLink({
     uri: httpUri,
@@ -53,9 +65,15 @@ function createApolloClient() {
               const token = getToken();
               return token ? { Authorization: `Bearer ${token}` } : {};
             },
-            // Render drops idle WebSockets after ~55s — ping every 30s
-            keepAlive: 30_000,
-            retryAttempts: 5,
+            // Render free tier: cold start + ~55s idle drop
+            keepAlive: 25_000,
+            retryAttempts: Infinity,
+            shouldRetry: () => true,
+            retryWait: async (retries) => {
+              // Exponential backoff, cap 10s — covers Render spin-up
+              await new Promise((r) => setTimeout(r, Math.min(10_000, 500 * 2 ** retries)));
+            },
+            lazy: true,
           }),
         )
       : null;
