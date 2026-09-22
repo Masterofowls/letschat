@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ExpressPeerServer } from 'peer';
-import type { Express } from 'express';
+import type { Express, RequestHandler } from 'express';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
@@ -12,6 +12,17 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const logger = new Logger('Bootstrap');
   const expressApp = app.getHttpAdapter().getInstance() as Express;
+
+  // PeerJS must be registered BEFORE Nest routes/404, otherwise GET /peerjs/* 404s.
+  // Client path `/peerjs` → `/peerjs/peerjs/id` (path + default key).
+  const peerServer = ExpressPeerServer(app.getHttpServer(), {
+    path: '/peerjs',
+    proxied: true,
+    allow_discovery: true,
+    corsOptions: { origin: true, credentials: true },
+  }) as RequestHandler;
+  expressApp.use(peerServer);
+  logger.log('PeerJS broker registered (GET /peerjs/peerjs/id)');
 
   const uploadsRoot = join(process.cwd(), 'uploads');
   if (!existsSync(uploadsRoot)) {
@@ -43,19 +54,6 @@ async function bootstrap(): Promise<void> {
   const port = Number(process.env.PORT) || 9000;
   await app.listen(port, '0.0.0.0');
   logger.log(`GraphQL API listening on http://0.0.0.0:${port}/graphql`);
-
-  // PeerJS: listen first, then attach (peer README + Nest).
-  // Mount path `/` + broker path `/peerjs` → client uses path `/peerjs`
-  // so ID URL is /peerjs/peerjs/id (path + default key).
-  const httpServer = app.getHttpServer();
-  const peerServer = ExpressPeerServer(httpServer, {
-    path: '/peerjs',
-    proxied: true,
-    allow_discovery: true,
-    corsOptions: { origin: true, credentials: true },
-  });
-  expressApp.use(peerServer);
-  logger.log('PeerJS broker ready (GET /peerjs/peerjs/id)');
 }
 
 bootstrap().catch((error: unknown) => {

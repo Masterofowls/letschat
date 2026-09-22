@@ -32,13 +32,13 @@ export const PUBLIC_PEER_BROKER: PeerBrokerConfig = {
 };
 
 /**
- * Resolve PeerJS broker from NEXT_PUBLIC_API_URL (Nest PeerServer),
- * matching https://habr.com/ru/companies/skillfactory/articles/551008/
- *
- * NEXT_PUBLIC_PEERJS_CLOUD=true → public broker only.
+ * Resolve PeerJS broker.
+ * Default: public PeerJS cloud (reliable). Self-hosted Nest broker is optional
+ * via NEXT_PUBLIC_PEERJS_CLOUD=false + NEXT_PUBLIC_API_URL.
  */
 export function resolvePeerBroker(): PeerBrokerConfig {
-  if (process.env.NEXT_PUBLIC_PEERJS_CLOUD === 'true') {
+  // Prefer cloud unless explicitly disabled — Render Nest mount is fragile with PeerJS.
+  if (process.env.NEXT_PUBLIC_PEERJS_CLOUD !== 'false') {
     return { ...PUBLIC_PEER_BROKER };
   }
 
@@ -49,8 +49,6 @@ export function resolvePeerBroker(): PeerBrokerConfig {
     return {
       host: url.hostname,
       port: url.port ? Number(url.port) : secure ? 443 : 80,
-      // ExpressPeerServer `{ path: '/peerjs' }` → client path `/peerjs`
-      // ID URL: /peerjs/peerjs/id
       path: '/peerjs',
       secure,
     };
