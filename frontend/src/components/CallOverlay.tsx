@@ -34,24 +34,23 @@ function RemoteTile({
     const audio = audioRef.current;
     const audioTracks = stream?.getAudioTracks() ?? [];
     const videoTracks = stream?.getVideoTracks() ?? [];
+
+    const onMeta = () => {
+      void video?.play().catch(() => undefined);
+    };
+
     if (video) {
       video.srcObject = videoTracks.length ? new MediaStream(videoTracks) : null;
-      const play = () => {
-        void video.play().catch(() => undefined);
-      };
-      video.addEventListener('loadedmetadata', play);
-      play();
-      return () => {
-        video.removeEventListener('loadedmetadata', play);
-        video.srcObject = null;
-        if (audio) audio.srcObject = null;
-      };
+      video.addEventListener('loadedmetadata', onMeta);
+      void video.play().catch(() => undefined);
     }
     if (audio) {
       audio.srcObject = audioTracks.length ? new MediaStream(audioTracks) : null;
       void audio.play().catch(() => undefined);
     }
+
     return () => {
+      video?.removeEventListener('loadedmetadata', onMeta);
       if (video) video.srcObject = null;
       if (audio) audio.srcObject = null;
     };
