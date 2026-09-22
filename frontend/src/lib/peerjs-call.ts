@@ -24,11 +24,24 @@ export type PeerBrokerConfig = {
   secure: boolean;
 };
 
+export const PUBLIC_PEER_BROKER: PeerBrokerConfig = {
+  host: '0.peerjs.com',
+  port: 443,
+  path: '/',
+  secure: true,
+};
+
 /**
- * Resolve PeerJS broker from NEXT_PUBLIC_API_URL (our Nest /peerjs mount),
- * matching the tutorial's ExpressPeerServer + Peer client setup.
+ * Resolve PeerJS broker from NEXT_PUBLIC_API_URL (Nest PeerServer),
+ * matching https://habr.com/ru/companies/skillfactory/articles/551008/
+ *
+ * NEXT_PUBLIC_PEERJS_CLOUD=true → public broker only.
  */
 export function resolvePeerBroker(): PeerBrokerConfig {
+  if (process.env.NEXT_PUBLIC_PEERJS_CLOUD === 'true') {
+    return { ...PUBLIC_PEER_BROKER };
+  }
+
   const graphql = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:9000/graphql';
   try {
     const url = new URL(graphql);
@@ -36,6 +49,8 @@ export function resolvePeerBroker(): PeerBrokerConfig {
     return {
       host: url.hostname,
       port: url.port ? Number(url.port) : secure ? 443 : 80,
+      // ExpressPeerServer `{ path: '/peerjs' }` → client path `/peerjs`
+      // ID URL: /peerjs/peerjs/id
       path: '/peerjs',
       secure,
     };
@@ -60,28 +75,46 @@ export class PeerJsCallSession {
   private readonly calledPeerIds = new Set<string>();
   private myPeerId: string | null = null;
   private closed = false;
+  private broker: PeerBrokerConfig;
 
   constructor(
     private readonly selfUserId: number,
     private readonly callbacks: PeerCallCallbacks,
-    private readonly broker: PeerBrokerConfig = resolvePeerBroker(),
-  ) {}
+    broker: PeerBrokerConfig = resolvePeerBroker(),
+  ) {
+    this.broker = broker;
+  }
 
   async start(localStream: MediaStream): Promise<string> {
     this.localStream = localStream;
+    try {
+      return await this.openPeer(this.broker);
+    } catch (err) {
+      // Self-hosted Render broker often 404s if path/proxy is wrong — use public PeerJS.
+      if (
+        this.broker.host !== PUBLIC_PEER_BROKER.host &&
+        process.env.NEXT_PUBLIC_PEERJS_CLOUD !== 'false'
+      ) {
+        this.broker = { ...PUBLIC_PEER_BROKER };
+        return this.openPeer(this.broker);
+      }
+      throw err;
+    }
+  }
+
+  private async openPeer(broker: PeerBrokerConfig): Promise<string> {
     this.peer?.destroy();
 
     const peer = new Peer({
-      host: this.broker.host,
-      port: this.broker.port,
-      path: this.broker.path,
-      secure: this.broker.secure,
+      host: broker.host,
+      port: broker.port,
+      path: broker.path,
+      secure: broker.secure,
       config: { iceServers: resolveIceServers() },
       debug: 1,
     });
     this.peer = peer;
 
-    // Tutorial: peer.on('call') → answer(stream) → on('stream') → addVideoStream
     peer.on('call', (call) => {
       if (!this.localStream || this.closed) return;
       const fromUserId = this.userIdForPeerId(call.peer);
@@ -97,7 +130,7 @@ export class PeerJsCallSession {
     });
 
     const peerId = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('PeerJS connection timeout')), 15_000);
+      const timer = setTimeout(() => reject(new Error('PeerJS connection timeout')), 12_000);
       peer.on('open', (id) => {
         clearTimeout(timer);
         resolve(id);
@@ -115,7 +148,6 @@ export class PeerJsCallSession {
 
     this.myPeerId = peerId;
     this.callbacks.onPeerReady?.(peerId);
-    // Tutorial: peer.on('open') → socket.emit('join-room', ROOM_ID, id)
     await this.callbacks.sendPeerId(peerId);
     return peerId;
   }
@@ -139,8 +171,7 @@ export class PeerJsCallSession {
 
     this.remotePeerIds.set(signal.fromUserId, remotePeerId);
 
-    // One initiator per pair (lower userId calls) — avoids both sides calling
-    // like the tutorial where only existing peers dial the newcomer.
+    // One initiator per pair (lower userId calls).
     if (this.selfUserId > signal.fromUserId) return;
 
     await this.connectToNewUser(signal.fromUserId, remotePeerId);

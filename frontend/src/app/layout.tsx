@@ -11,10 +11,18 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: 'LetsChat',
   description: 'Real-time rooms chat — Discord-inspired',
+  applicationName: 'LetsChat',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'LetsChat',
+  },
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    apple: [{ url: '/icon.svg' }],
+  },
+  other: {
+    'mobile-web-app-capable': 'yes',
   },
   formatDetection: {
     telephone: false,
