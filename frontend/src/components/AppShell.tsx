@@ -1,12 +1,11 @@
 'use client';
 
 import { ReactNode, useEffect } from 'react';
-import { useQuery } from '@apollo/client';
 import { ServerRail } from '@/components/ServerRail';
 import { RoomSidebar } from '@/components/RoomSidebar';
 import { MobileNavProvider, useMobileNav } from '@/components/MobileNavContext';
 import { CallProvider } from '@/components/CallProvider';
-import { ME_QUERY } from '@/lib/graphql/queries';
+import { CALLS_ENABLED } from '@/lib/feature-flags';
 import { startApiKeepAlive } from '@/lib/api-keepalive';
 import { cn } from '@/lib/utils';
 
@@ -32,10 +31,9 @@ function AppShellInner({
   className,
 }: AppShellProps) {
   const { navOpen, closeNav } = useMobileNav();
-  const { data } = useQuery(ME_QUERY);
 
-  return (
-    <CallProvider currentUserId={data?.me?.id}>
+  const shell = (
+    <>
       <KeepAlive />
       <div className="discord-shell">
         <div className="hidden md:contents">
@@ -81,8 +79,14 @@ function AppShellInner({
           <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         </div>
       </div>
-    </CallProvider>
+    </>
   );
+
+  if (!CALLS_ENABLED) {
+    return shell;
+  }
+
+  return <CallProvider>{shell}</CallProvider>;
 }
 
 export function AppShell(props: AppShellProps) {

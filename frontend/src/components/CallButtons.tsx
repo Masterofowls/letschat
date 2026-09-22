@@ -2,6 +2,7 @@
 
 import { Phone, Video } from 'lucide-react';
 import { useCallOptional } from '@/components/CallProvider';
+import { CALLS_ENABLED } from '@/lib/feature-flags';
 import { Button } from '@/components/ui/button';
 
 type Props = {
@@ -10,6 +11,8 @@ type Props = {
 };
 
 export function CallButtons({ roomId, isDm }: Props) {
+  if (!CALLS_ENABLED) return null;
+
   const call = useCallOptional();
   if (!call) return null;
 

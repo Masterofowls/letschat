@@ -10,7 +10,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useMutation, useSubscription } from '@apollo/client';
+import { useMutation, useQuery, useSubscription } from '@apollo/client';
+import { ME_QUERY } from '@/lib/graphql/queries';
+import { CALLS_ENABLED } from '@/lib/feature-flags';
 import {
   CALL_SIGNAL_SUBSCRIPTION,
   CALL_UPDATED_SUBSCRIPTION,
@@ -102,7 +104,27 @@ type Props = {
   currentUserId?: number;
 };
 
-export function CallProvider({ children, currentUserId }: Props) {
+/** Wraps app when CALLS_ENABLED; resolves user id for signaling if not passed. */
+export function CallProvider({ children, currentUserId: currentUserIdProp }: Props) {
+  const meQuery = useQuery(ME_QUERY, { skip: currentUserIdProp != null });
+  const currentUserId = currentUserIdProp ?? meQuery.data?.me?.id;
+
+  if (!CALLS_ENABLED) {
+    return <>{children}</>;
+  }
+
+  return (
+    <CallProviderActive currentUserId={currentUserId}>{children}</CallProviderActive>
+  );
+}
+
+function CallProviderActive({
+  children,
+  currentUserId,
+}: {
+  children: ReactNode;
+  currentUserId?: number;
+}) {
   const [activeCall, setActiveCall] = useState<CallGql | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallGql | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);

@@ -104,6 +104,12 @@ NEXT_PUBLIC_WS_URL=ws://localhost:9000/graphql
 
 Apollo Client sends WS keep-alives every 30s so Render’s ~55s idle timeout does not drop subscriptions.
 
+## Voice / video calls
+
+In-app calls are **disabled** (`frontend/src/lib/feature-flags.ts`: `CALLS_ENABLED = false`). The UI does not start calls or open call subscriptions; backend `calls` GraphQL remains for a future third-party streaming integration (Daily, LiveKit, etc.).
+
+To re-enable the legacy PeerJS path temporarily, set `CALLS_ENABLED = true` and redeploy the frontend.
+
 ## Production tips
 
 - Set `USE_PG_PUBSUB=true` when running multiple backend instances (PostgreSQL LISTEN/NOTIFY).
