@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { ExpressPeerServer } from 'peer';
 import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
@@ -36,6 +37,16 @@ async function bootstrap(): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`AdminJS skipped: ${message}`);
   }
+
+  // PeerJS broker (Habr tutorial pattern: ExpressPeerServer + client Peer)
+  await app.init();
+  const httpServer = app.getHttpServer();
+  const peerServer = ExpressPeerServer(httpServer, {
+    path: '/',
+    allow_discovery: true,
+  });
+  app.use('/peerjs', peerServer);
+  logger.log('PeerJS broker mounted at /peerjs');
 
   // Render requires binding to 0.0.0.0 and process.env.PORT
   const port = Number(process.env.PORT) || 9000;

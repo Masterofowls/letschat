@@ -36,10 +36,18 @@ function RemoteTile({
     const videoTracks = stream?.getVideoTracks() ?? [];
     if (video) {
       video.srcObject = videoTracks.length ? new MediaStream(videoTracks) : null;
-      void video.play().catch(() => undefined);
+      const play = () => {
+        void video.play().catch(() => undefined);
+      };
+      video.addEventListener('loadedmetadata', play);
+      play();
+      return () => {
+        video.removeEventListener('loadedmetadata', play);
+        video.srcObject = null;
+        if (audio) audio.srcObject = null;
+      };
     }
     if (audio) {
-      // Separate audio element avoids autoplay blocks when video is hidden.
       audio.srcObject = audioTracks.length ? new MediaStream(audioTracks) : null;
       void audio.play().catch(() => undefined);
     }
